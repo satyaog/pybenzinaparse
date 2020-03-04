@@ -2,8 +2,8 @@ from datetime import datetime
 
 from bitstring import pack
 
-from pybzparse import boxes as bx_def, headers as hd_def
-import pybzparse.utils as utils
+from pybenzinaparse import boxes as bx_def, headers as hd_def
+import pybenzinaparse.utils as utils
 
 
 def test_to_mp4_date():

@@ -2,8 +2,8 @@
 
 from bitstring import pack
 
-from pybzparse import Parser, boxes as bx_def, fields_lists as flists
-from pybzparse.headers import FullBoxHeader, MAX_UINT_32
+from pybenzinaparse import Parser, boxes as bx_def, fields_lists as flists
+from pybenzinaparse.headers import FullBoxHeader, MAX_UINT_32
 
 
 def test_header_fields_list():

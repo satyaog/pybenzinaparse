@@ -2,10 +2,10 @@ from datetime import datetime
 
 from bitstring import pack
 
-from pybzparse import boxes as bx_def
-from pybzparse.headers import BoxHeader
-from pybzparse.utils import to_mp4_time, make_mvhd, \
-                            make_meta_trak, make_text_trak, make_vide_trak
+from pybenzinaparse import boxes as bx_def
+from pybenzinaparse.headers import BoxHeader
+from pybenzinaparse.utils import to_mp4_time, make_mvhd, make_meta_trak, \
+    make_text_trak, make_vide_trak
 
 
 def test_mp4_dataset():

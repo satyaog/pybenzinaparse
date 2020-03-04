@@ -8,10 +8,10 @@ except(IOError, ImportError):
     long_description = open("README.md").read()
 
 setup(
-    name="pybzparse",
-    version="0.2.0",
+    name="pybenzinaparse",
+    version="0.2.1",
     packages=find_packages(exclude=["test_*"]),
-    url="https://github.com/satyaog/pybzparse",
+    url="https://github.com/satyaog/pybenzinaparse",
     license="The MIT License",
     author="Satya Ortiz-Gagné",
     author_email="satya.ortiz-gagne@mila.quebec",

@@ -2,8 +2,8 @@
 
 from bitstring import ConstBitStream
 
-from pybzparse import Parser, boxes as bx_def
-from pybzparse.boxes import UnknownBox, SingleItemTypeReferenceBox
+from pybenzinaparse import Parser, boxes as bx_def
+from pybenzinaparse.boxes import UnknownBox, SingleItemTypeReferenceBox
 
 
 def test_photo_heic_guided_parsing():
