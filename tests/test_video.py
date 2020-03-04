@@ -2,7 +2,7 @@
 
 from bitstring import ConstBitStream
 
-from pybzparse import Parser
+from pybenzinaparse import Parser
 
 
 # TODO: add test_video_guided_parsing

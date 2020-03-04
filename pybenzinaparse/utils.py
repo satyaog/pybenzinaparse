@@ -1,8 +1,8 @@
 from ctypes import c_uint32
 from datetime import datetime, timedelta
 
-from pybzparse import boxes as bx_def
-from pybzparse.headers import BoxHeader, FullBoxHeader
+from pybenzinaparse import boxes as bx_def
+from pybenzinaparse.headers import BoxHeader, FullBoxHeader
 
 BEGIN = datetime(1904, 1, 1, 0, 0)
 MAX_UINT_32 = c_uint32(-1).value

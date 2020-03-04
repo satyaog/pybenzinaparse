@@ -1,19 +1,15 @@
 from abc import ABCMeta, abstractmethod
 
-from pybzparse import Parser
+from pybenzinaparse import Parser
 
-from pybzparse.headers import FullBoxHeader
-from pybzparse.fields_lists import *
-from pybzparse.sub_fields_lists import EditListSubFieldsList, \
-                                       TimeToSampleSubFieldsList, \
-                                       CompositionOffsetSubFieldsList, \
-                                       SampleSizeSubFieldsList, \
-                                       SampleToChunkSubFieldsList, \
-                                       ChunkOffsetSubFieldsList, \
-                                       ChunkOffset64SubFieldsList, \
-                                       ItemLocationSubFieldsList, \
-                                       ItemPropertyAssociationSubFieldsList, \
-                                       HEVCConfigurationSubFieldsList
+from pybenzinaparse.headers import FullBoxHeader
+from pybenzinaparse.fields_lists import *
+from pybenzinaparse.sub_fields_lists import EditListSubFieldsList, \
+    TimeToSampleSubFieldsList, CompositionOffsetSubFieldsList, \
+    SampleSizeSubFieldsList, SampleToChunkSubFieldsList, \
+    ChunkOffsetSubFieldsList, ChunkOffset64SubFieldsList, \
+    ItemLocationSubFieldsList, ItemPropertyAssociationSubFieldsList, \
+    HEVCConfigurationSubFieldsList
 
 
 class MixinDictRepr(object):
