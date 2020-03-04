@@ -1,6 +1,6 @@
 from abc import ABCMeta, abstractmethod
 
-from pybzparse.fields_lists import *
+from pybenzinaparse.fields_lists import *
 
 
 class AbstractSubFieldsList(metaclass=ABCMeta):
