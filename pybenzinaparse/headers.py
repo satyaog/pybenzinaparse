@@ -158,3 +158,4 @@ class FullBoxHeader(BoxHeader, FullBoxHeaderFieldsList):
 
 # Register header
 Parser.register_box_header(BoxHeader)
+Parser.register_box_full_header(FullBoxHeader)

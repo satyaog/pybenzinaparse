@@ -10,17 +10,22 @@ log.setLevel(logging.WARN)
 
 class Parser(object):
     _box_header = None
+    _box_full_header = None
     _container_box = None
     _default_box = None
     _box_lookup = {}
 
     @classmethod
     def register_box(cls, box_cls):
-        cls._box_lookup[box_cls.type] = box_cls.parse_box
+        cls._box_lookup[box_cls.type] = box_cls
 
     @classmethod
     def register_box_header(cls, box_header_cls):
         cls._box_header = box_header_cls
+
+    @classmethod
+    def register_box_full_header(cls, box_header_cls):
+        cls._box_full_header = box_header_cls
 
     @classmethod
     def register_container_box(cls, box_cls):
@@ -71,43 +76,53 @@ class Parser(object):
             log.debug("Header type: %s", header.box_type)
             log.debug("Byte pos after header: %d relative to (%d)",
                       bstr.bytepos, offset_bytes)
-
-            if headers_only:
-                yield header
-
-                # move pointer to next header if possible
-                try:
-                    bstr.bytepos = header.start_pos + header.box_size
-                except ValueError:
-                    log.warning("Premature end of data")
-                    raise
-            else:
-                yield cls.parse_box(bstr, header, recursive=recursive)
+            yield cls.parse_box(bstr, header, headers_only=headers_only, recursive=recursive)
 
     @classmethod
-    def parse_header(cls, bstr):
+    def parse_header(cls, bstr, recursive=True, default_box_cls=None):
+        if default_box_cls is None:
+            default_box_cls = cls._default_box
+
         try:
+            header_pos = bstr.bytepos
             header = cls._box_header()
             header.parse(bstr)
+
+            box_cls = cls._box_lookup.get(header.type, default_box_cls)
+
+            if box_cls.get_header_cls() != cls._box_header:
+                bstr.bytepos = header_pos
+                header = box_cls.get_header_cls()()
+                header.parse(bstr)
         except bs.ReadError:
             log.error("Premature end of data while reading box header")
             raise
         return header
 
     @classmethod
-    def parse_box(cls, bstr, header, default_box_cls=None, recursive=True):
+    def parse_box(cls, bstr, header, headers_only=False, recursive=True, default_box_cls=None):
         if default_box_cls is None:
             default_box_cls = cls._default_box
 
         # Get parser method for header type
-        parse_function = cls._box_lookup.get(header.type, default_box_cls.parse_box)
+        box_cls = cls._box_lookup.get(header.type, default_box_cls)
 
         try:
-            box = parse_function(bstr, header)
-            if recursive and isinstance(box, cls._container_box):
-                box.parse_boxes(bstr, recursive)
+            if headers_only:
+                # Get parser method for header type
+                box_cls = cls._box_lookup.get(header.type, default_box_cls)
+
+                box = box_cls(header)
+                skipped_bits = box.skip_fields(bstr)
+
+                recursive = recursive and skipped_bits is not None
             else:
-                bstr.bytepos = box.header.start_pos + box.header.box_size
+                box = box_cls.parse_box(bstr, header)
+
+            if recursive and isinstance(box, cls._container_box):
+                box.parse_boxes(bstr, headers_only, recursive)
+
+            bstr.bytepos = box.header.start_pos + box.header.box_size
         except ValueError:
             log.error("Premature end of data")
             raise

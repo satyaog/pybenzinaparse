@@ -38,7 +38,7 @@ class Field:
         return self._is_string
 
 
-class AbstractFieldsList:
+class FieldsList:
     def __init__(self, length):
         self._fields = [None] * length
         self._end_index = 0
@@ -106,8 +106,13 @@ class AbstractFieldsList:
         return [field for field in self._fields[:self._end_index] if
                 field is not None]
 
+    @staticmethod
+    def bits_len(header):
+        del header
+        return None
 
-class BoxHeaderFieldsList(AbstractFieldsList):
+
+class BoxHeaderFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 4)
 
@@ -193,7 +198,7 @@ class FullBoxHeaderFieldsList(BoxHeaderFieldsList):
         self._flags.value = self._flags.value.bytes
 
 
-class DataBoxFieldsList(AbstractFieldsList):
+class DataBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -219,7 +224,7 @@ class DataBoxFieldsList(AbstractFieldsList):
 
 
 # Root boxes
-class FileTypeBoxFieldsList(AbstractFieldsList):
+class FileTypeBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 3)
 
@@ -259,10 +264,10 @@ class FileTypeBoxFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._minor_version)
         self._read_field(bstr, self._compatible_brands,
                          until_pos=(header.start_pos + header.box_size) * 8)
-
+    
 
 # moov boxes
-class MovieHeaderBoxFieldsList(AbstractFieldsList):
+class MovieHeaderBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 11)
 
@@ -404,9 +409,21 @@ class MovieHeaderBoxFieldsList(AbstractFieldsList):
 
         self._read_field(bstr, self._next_track_id)
 
+    @staticmethod
+    def bits_len(header):
+        if header.version != 1:
+            bits_len = 32 + 32 + 32 + 32
+        else:
+            bits_len = 64 + 64 + 32 + 64
+        bits_len += 16 * 2 + 8 * 2 + \
+            16 + 32 * 2 + \
+            32 * 9 + 32 * 6 + \
+            32
+        return bits_len
+
 
 # meta boxes
-class ItemLocationBoxFieldsList(AbstractFieldsList):
+class ItemLocationBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 6)
 
@@ -479,13 +496,22 @@ class ItemLocationBoxFieldsList(AbstractFieldsList):
 
         self._read_field(bstr, self._item_count)
 
+    @staticmethod
+    def bits_len(header):
+        bits_len = 4 + 4 + 4 + 4 + 4
+        if header.version < 2:
+            bits_len += 16
+        else:
+            bits_len += 32
+        return bits_len
 
-class ItemLocationBoxItemFieldsList(AbstractFieldsList):
+
+class ItemLocationBoxItemFieldsList(FieldsList):
     def __init__(self, base_offset_size):
         # TODO: do mention that ItemLocationBoxItemFieldsList does not make
         #  use of super()
-        AbstractFieldsList.__init__(self, 6)
-
+        FieldsList.__init__(self, 6)
+        
         self._item_id = \
             self._register_field(Field(value_type="uintbe", size=32))
         self._reserved0 = \
@@ -556,11 +582,11 @@ class ItemLocationBoxItemFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._extent_count)
 
 
-class ItemLocationBoxItemExtentFieldsList(AbstractFieldsList):
+class ItemLocationBoxItemExtentFieldsList(FieldsList):
     def __init__(self, index_size, offset_size, length_size):
         # TODO: do mention that ItemLocationBoxItemExtentFieldsList does not
         #  make use of super()
-        AbstractFieldsList.__init__(self, 3)
+        FieldsList.__init__(self, 3)
 
         self._extent_index = \
             self._register_field(Field(value_type="uintbe", size=index_size * 8))
@@ -605,7 +631,7 @@ class ItemLocationBoxItemExtentFieldsList(AbstractFieldsList):
 
 
 # trak boxes
-class TrackHeaderBoxFieldsList(AbstractFieldsList):
+class TrackHeaderBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 13)
 
@@ -765,9 +791,22 @@ class TrackHeaderBoxFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._height,
                          until_pos=bstr.bitpos + self._height_length)
 
+    @staticmethod
+    def bits_len(header):
+        if header.version != 1:
+            bits_len = 32 + 32 + 32 + 32 + 32
+        else:
+            bits_len = 64 + 64 + 32 + 32 + 64
+        bits_len += 32 * 2 + \
+            16 + 16 + 8 * 2 + \
+            16 + \
+            32 * 9 + \
+            16 * 2 + 16 * 2
+        return bits_len
+
 
 # iref boxes
-class SingleItemTypeReferenceBoxFieldsList(AbstractFieldsList):
+class SingleItemTypeReferenceBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 3)
 
@@ -810,7 +849,7 @@ class SingleItemTypeReferenceBoxFieldsList(AbstractFieldsList):
                          until_pos=bstr.bitpos + self._reference_count.value * 16)
 
 
-class SingleItemTypeReferenceBoxLargeFieldsList(AbstractFieldsList):
+class SingleItemTypeReferenceBoxLargeFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 3)
 
@@ -854,7 +893,7 @@ class SingleItemTypeReferenceBoxLargeFieldsList(AbstractFieldsList):
 
 
 # iprp boxes
-class ItemPropertyAssociationBoxFieldsList(AbstractFieldsList):
+class ItemPropertyAssociationBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -869,10 +908,11 @@ class ItemPropertyAssociationBoxFieldsList(AbstractFieldsList):
         self._set_field(self._entry_count, value)
 
     def parse_fields(self, bstr, header):
+        del header
         self._read_field(bstr, self._entry_count)
 
 
-class ItemPropertyAssociationBoxEntryFieldsList(AbstractFieldsList):
+class ItemPropertyAssociationBoxEntryFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 2)
 
@@ -902,10 +942,10 @@ class ItemPropertyAssociationBoxEntryFieldsList(AbstractFieldsList):
             self._item_id.type = "uintbe:16"
 
         self._read_field(bstr, self._item_id)
-        self._read_field(bstr, self._association_count)
+        self._read_field(bstr, self._association_count)   
 
 
-class ItemPropertyAssociationBoxEntryAssociationsFieldsList(AbstractFieldsList):
+class ItemPropertyAssociationBoxEntryAssociationsFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 3)
 
@@ -947,11 +987,11 @@ class ItemPropertyAssociationBoxEntryAssociationsFieldsList(AbstractFieldsList):
                 self._property_index_7b.value << 8
         else:
             self._read_field(bstr, self._property_index_7b)
-            self._property_index_cache = self._property_index_7b.value
+            self._property_index_cache = self._property_index_7b.value 
 
 
 # mdia boxes
-class MediaHeaderBoxFieldsList(AbstractFieldsList):
+class MediaHeaderBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 7)
 
@@ -1041,10 +1081,20 @@ class MediaHeaderBoxFieldsList(AbstractFieldsList):
 
         self._read_field(bstr, self._language,
                          until_pos=bstr.bitpos + self._language_length)
-        self._read_field(bstr, self._pre_defined)
+        self._read_field(bstr, self._pre_defined)      
+
+    @staticmethod
+    def bits_len(header):
+        if header.version != 1:
+            bits_len = 32 + 32 + 32 + 32
+        else:
+            bits_len = 64 + 64 + 32 + 64
+        bits_len += 1 + \
+            5 * 3 + 16
+        return bits_len
 
 
-class HandlerReferenceBoxFieldsList(AbstractFieldsList):
+class HandlerReferenceBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 4)
 
@@ -1100,7 +1150,7 @@ class HandlerReferenceBoxFieldsList(AbstractFieldsList):
 
 
 # edts boxes
-class EditListBoxFieldsList(AbstractFieldsList):
+class EditListBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -1122,7 +1172,7 @@ class EditListBoxFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._entry_count)
 
 
-class EditListBoxEntryFieldsList(AbstractFieldsList):
+class EditListBoxEntryFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 4)
 
@@ -1179,7 +1229,7 @@ class EditListBoxEntryFieldsList(AbstractFieldsList):
 
 
 # minf boxes
-class VideoMediaHeaderBoxFieldsList(AbstractFieldsList):
+class VideoMediaHeaderBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 2)
 
@@ -1209,11 +1259,45 @@ class VideoMediaHeaderBoxFieldsList(AbstractFieldsList):
         del header
         self._read_field(bstr, self._graphicsmode)
         self._read_field(bstr, self._opcolor,
-                         until_pos=bstr.bitpos + self._opcolor_length)
+                         until_pos=bstr.bitpos + self._opcolor_length)       
+
+    @staticmethod
+    def bits_len(header):
+        del header
+        bits_len = 16 + 16 * 3
+        return bits_len
 
 
 # stbl boxes
-class SampleDescriptionBoxFieldsList(AbstractFieldsList):
+class SampleDescriptionBoxFieldsList(FieldsList):
+    def __init__(self, length=0):
+        super().__init__(length + 1)
+
+        self._entry_count = self._register_field(Field(value_type="uintbe", size=32))
+
+        # initialize with empty value
+        self._set_field(self._entry_count, 0)
+
+    @property
+    def entry_count(self):
+        return self._entry_count.value
+
+    @entry_count.setter
+    def entry_count(self, value):
+        self._set_field(self._entry_count, value)
+
+    def parse_fields(self, bstr, header):
+        del header
+        self._read_field(bstr, self._entry_count)
+
+    @staticmethod
+    def bits_len(header):
+        del header
+        bits_len = 32
+        return bits_len
+
+
+class TimeToSampleBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -1235,29 +1319,7 @@ class SampleDescriptionBoxFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._entry_count)
 
 
-class TimeToSampleBoxFieldsList(AbstractFieldsList):
-    def __init__(self, length=0):
-        super().__init__(length + 1)
-
-        self._entry_count = self._register_field(Field(value_type="uintbe", size=32))
-
-        # initialize with empty value
-        self._set_field(self._entry_count, 0)
-
-    @property
-    def entry_count(self):
-        return self._entry_count.value
-
-    @entry_count.setter
-    def entry_count(self, value):
-        self._set_field(self._entry_count, value)
-
-    def parse_fields(self, bstr, header):
-        del header
-        self._read_field(bstr, self._entry_count)
-
-
-class TimeToSampleBoxEntryFieldsList(AbstractFieldsList):
+class TimeToSampleBoxEntryFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 2)
 
@@ -1288,7 +1350,7 @@ class TimeToSampleBoxEntryFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._sample_delta)
 
 
-class CompositionOffsetBoxFieldsList(AbstractFieldsList):
+class CompositionOffsetBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -1310,7 +1372,7 @@ class CompositionOffsetBoxFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._entry_count)
 
 
-class CompositionOffsetBoxEntryFieldsList(AbstractFieldsList):
+class CompositionOffsetBoxEntryFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 2)
 
@@ -1343,7 +1405,7 @@ class CompositionOffsetBoxEntryFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._sample_offset)
 
 
-class SampleSizeBoxFieldsList(AbstractFieldsList):
+class SampleSizeBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 2)
 
@@ -1375,7 +1437,7 @@ class SampleSizeBoxFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._sample_count)
 
 
-class SampleSizeBoxSampleFieldsList(AbstractFieldsList):
+class SampleSizeBoxSampleFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -1395,7 +1457,7 @@ class SampleSizeBoxSampleFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._entry_size)
 
 
-class SampleToChunkBoxFieldsList(AbstractFieldsList):
+class SampleToChunkBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -1417,7 +1479,7 @@ class SampleToChunkBoxFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._entry_count)
 
 
-class SampleToChunkBoxEntryFieldsList(AbstractFieldsList):
+class SampleToChunkBoxEntryFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 3)
 
@@ -1459,7 +1521,7 @@ class SampleToChunkBoxEntryFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._sample_description_index)
 
 
-class ChunkOffsetBoxFieldsList(AbstractFieldsList):
+class ChunkOffsetBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -1481,7 +1543,7 @@ class ChunkOffsetBoxFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._entry_count)
 
 
-class ChunkOffsetBoxEntryFieldsList(AbstractFieldsList):
+class ChunkOffsetBoxEntryFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -1508,7 +1570,7 @@ class ChunkOffset64BoxEntryFieldsList(ChunkOffsetBoxEntryFieldsList):
 
 
 # dinf boxes
-class DataReferenceBoxFieldsList(AbstractFieldsList):
+class DataReferenceBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -1529,8 +1591,14 @@ class DataReferenceBoxFieldsList(AbstractFieldsList):
         del header
         self._read_field(bstr, self._entry_count)
 
+    @staticmethod
+    def bits_len(header):
+        del header
+        bits_len = 32
+        return bits_len
 
-class PrimaryItemBoxFieldsList(AbstractFieldsList):
+
+class PrimaryItemBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -1548,10 +1616,18 @@ class PrimaryItemBoxFieldsList(AbstractFieldsList):
         if header.version == 0:
             self._item_id.type = "uintbe:16"
 
-        self._read_field(bstr, self._item_id)
+        self._read_field(bstr, self._item_id)              
+
+    @staticmethod
+    def bits_len(header):
+        if header.version == 0:
+            bits_len = 16
+        else:
+            bits_len = 32
+        return bits_len
 
 
-class ItemInformationBoxFieldsList(AbstractFieldsList):
+class ItemInformationBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -1573,7 +1649,7 @@ class ItemInformationBoxFieldsList(AbstractFieldsList):
 
 
 # stsd boxes
-class SampleEntryBoxFieldsList(AbstractFieldsList):
+class SampleEntryBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 2)
 
@@ -1599,6 +1675,12 @@ class SampleEntryBoxFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._reserved0,
                          until_pos=bstr.bitpos + self._reserved0_length)
         self._read_field(bstr, self._data_reference_index)
+
+    @staticmethod
+    def bits_len(header):
+        del header
+        bits_len = 8 * 6 + 16
+        return bits_len
 
 
 class VisualSampleEntryBoxFieldsList(SampleEntryBoxFieldsList):
@@ -1727,6 +1809,17 @@ class VisualSampleEntryBoxFieldsList(SampleEntryBoxFieldsList):
 
         self._read_field(bstr, self._pre_defined2)
 
+    @staticmethod
+    def bits_len(header):
+        bits_len = super().bits_len(header)
+        del header
+        bits_len += 16 + 16 + 32 * 3 + \
+            16 + 16 + 16 * 2 + \
+            32 + \
+            16 + 32 + 16 + \
+            16
+        return bits_len
+
 
 class PlainTextSampleEntry(SampleEntryBoxFieldsList):
     pass
@@ -1762,7 +1855,7 @@ class SimpleTextSampleEntryBoxFieldsList(PlainTextSampleEntry):
         del header
 
         self._read_field(bstr, self._content_encoding)
-        self._read_field(bstr, self._mime_format)
+        self._read_field(bstr, self._mime_format)  
 
 
 class MetaDataSampleEntryBoxFieldsList(SampleEntryBoxFieldsList):
@@ -1840,7 +1933,7 @@ class TextSubtitleSampleEntryBoxFieldsList(SubtitleSampleEntryBoxFieldsList):
 
 
 # dref boxes
-class DataEntryUrlBoxFieldsList(AbstractFieldsList):
+class DataEntryUrlBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 1)
 
@@ -1861,7 +1954,7 @@ class DataEntryUrlBoxFieldsList(AbstractFieldsList):
             self._read_field(bstr, self._location)
 
 
-class DataEntryUrnBoxFieldsList(AbstractFieldsList):
+class DataEntryUrnBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 2)
 
@@ -1890,11 +1983,11 @@ class DataEntryUrnBoxFieldsList(AbstractFieldsList):
         # If this acts like the URL_ box, it seams that location can be empty
         # (0 bytes) based on the result in the test file photo.heic
         if bstr.bytepos < end:
-            self._read_field(bstr, self._location)
+            self._read_field(bstr, self._location) 
 
 
 # iinf boxes
-class ItemInfoEntryBoxFieldsList(AbstractFieldsList):
+class ItemInfoEntryBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 8)
 
@@ -2023,7 +2116,7 @@ class ItemInfoEntryBoxFieldsList(AbstractFieldsList):
 
 
 # avc1, hev1, hvc1 boxes
-class PixelAspectRatioBoxFieldsList(AbstractFieldsList):
+class PixelAspectRatioBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 8)
 
@@ -2051,10 +2144,16 @@ class PixelAspectRatioBoxFieldsList(AbstractFieldsList):
     def parse_fields(self, bstr, header):
         del header
         self._read_field(bstr, self._h_spacing)
-        self._read_field(bstr, self._v_spacing)
+        self._read_field(bstr, self._v_spacing)         
+
+    @staticmethod
+    def bits_len(header):
+        del header
+        bits_len = 32 + 32
+        return bits_len
 
 
-class CleanApertureBoxFieldsList(AbstractFieldsList):
+class CleanApertureBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 8)
 
@@ -2151,11 +2250,20 @@ class CleanApertureBoxFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._horiz_off_n)
         self._read_field(bstr, self._horiz_off_d)
         self._read_field(bstr, self._vert_off_n)
-        self._read_field(bstr, self._vert_off_d)
+        self._read_field(bstr, self._vert_off_d)           
+
+    @staticmethod
+    def bits_len(header):
+        del header
+        bits_len = 32 + 32 + \
+            32 + 32 + \
+            32 + 32 + \
+            32 + 32
+        return bits_len
 
 
 # hev1, hvc1 boxes
-class HEVCConfigurationBoxFieldsList(AbstractFieldsList):
+class HEVCConfigurationBoxFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 23)
 
@@ -2399,10 +2507,29 @@ class HEVCConfigurationBoxFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._temporal_id_nested)
         self._read_field(bstr, self._length_size_minus_one)
 
-        self._read_field(bstr, self._num_of_arrays)
+        self._read_field(bstr, self._num_of_arrays)           
+
+    @staticmethod
+    def bits_len(header):
+        del header
+        bits_len = 8 + \
+            2 + 1 + 5 + 32 + 48 + 8 + \
+            4 + \
+            12 + \
+            6 + \
+            2 + \
+            6 + \
+            2 + \
+            5 + \
+            3 + \
+            5 + \
+            3 + \
+            16 + 2 + 3 + 1 + 2 + \
+            8
+        return bits_len
 
 
-class HEVCConfigurationBoxArrayFieldsList(AbstractFieldsList):
+class HEVCConfigurationBoxArrayFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 4)
 
@@ -2452,8 +2579,16 @@ class HEVCConfigurationBoxArrayFieldsList(AbstractFieldsList):
         self._read_field(bstr, self._nal_unit_type)
         self._read_field(bstr, self._num_nalus)
 
+    @staticmethod
+    def bits_len(header):
+        del header
+        bits_len = 1 + \
+            1 + \
+            6 + 16
+        return bits_len
 
-class HEVCConfigurationBoxNaluFieldsList(AbstractFieldsList):
+
+class HEVCConfigurationBoxNaluFieldsList(FieldsList):
     def __init__(self, length=0):
         super().__init__(length + 2)
 

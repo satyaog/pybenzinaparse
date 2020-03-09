@@ -18,7 +18,6 @@ def test_photo_heic_guided_parsing():
     assert ftyp.minor_version == 0
     assert ftyp.compatible_brands == [1835623985,  # b"mif1"
                                       1751476579]  # b"heic"
-    assert ftyp.padding == b''
 
     # meta
     box_header = Parser.parse_header(bstr)
@@ -28,7 +27,6 @@ def test_photo_heic_guided_parsing():
     assert meta.header.box_size == 3955
     assert meta.header.version == 0
     assert meta.header.flags == b"\x00\x00\x00"
-    assert meta.padding == b''
 
     # meta/hdlr
     box_header = Parser.parse_header(bstr)
@@ -41,6 +39,9 @@ def test_photo_heic_guided_parsing():
     assert hdlr.pre_defined == 0
     assert hdlr.handler_type == b"pict"
     assert hdlr.name == b'\0'
+
+    # This file has a extraneous null byte at the end of it's hdlr
+    hdlr.load(bstr)
     assert hdlr.padding == b'\0'
 
     # meta/dinf
@@ -49,7 +50,6 @@ def test_photo_heic_guided_parsing():
     assert dinf.header.start_pos == 70
     assert dinf.header.type == b"dinf"
     assert dinf.header.box_size == 36
-    assert dinf.padding == b''
 
     # meta/dinf/dref
     box_header = Parser.parse_header(bstr)
@@ -60,7 +60,6 @@ def test_photo_heic_guided_parsing():
     assert dref.header.version == 0
     assert dref.header.flags == b"\x00\x00\x00"
     assert dref.entry_count == 1
-    assert dref.padding == b''
 
     # meta/dinf/dref/url_
     box_header = Parser.parse_header(bstr)
@@ -69,7 +68,6 @@ def test_photo_heic_guided_parsing():
     assert url.header.type == b"url "
     assert url.header.box_size == 12
     assert url.location is None
-    assert url.padding == b''
 
     # meta/pitm
     box_header = Parser.parse_header(bstr)
@@ -77,7 +75,6 @@ def test_photo_heic_guided_parsing():
     assert pitm.header.start_pos == 106
     assert pitm.header.type == b"pitm"
     assert pitm.header.box_size == 14
-    assert pitm.padding == b''
 
     # meta/iinf
     box_header = Parser.parse_header(bstr)
@@ -86,7 +83,6 @@ def test_photo_heic_guided_parsing():
     assert iinf.header.type == b"iinf"
     assert iinf.header.box_size == 1085
     assert iinf.entry_count == 51
-    assert iinf.padding == b''
 
     for i in range(iinf.entry_count):
         # meta/iinf/infe
@@ -108,7 +104,6 @@ def test_photo_heic_guided_parsing():
             assert infe.content_encoding is None
             assert infe.item_uri_type is None
             assert infe.extension_type is None
-            assert infe.padding == b''
         elif infe.item_id == 50:
             assert infe.header.start_pos == 134 + 49 * 21
             assert infe.header.type == b"infe"
@@ -124,7 +119,6 @@ def test_photo_heic_guided_parsing():
             assert infe.content_encoding is None
             assert infe.item_uri_type is None
             assert infe.extension_type is None
-            assert infe.padding == b''
         elif infe.item_id == 51:
             assert infe.header.start_pos == 134 + 50 * 21
             assert infe.header.type == b"infe"
@@ -140,7 +134,6 @@ def test_photo_heic_guided_parsing():
             assert infe.content_encoding is None
             assert infe.item_uri_type is None
             assert infe.extension_type is None
-            assert infe.padding == b''
         else:
             assert infe.header.start_pos == 134 + i * 21
             assert infe.header.type == b"infe"
@@ -156,7 +149,6 @@ def test_photo_heic_guided_parsing():
             assert infe.content_encoding is None
             assert infe.item_uri_type is None
             assert infe.extension_type is None
-            assert infe.padding == b''
 
     # meta/iref
     box_header = Parser.parse_header(bstr)
@@ -166,7 +158,6 @@ def test_photo_heic_guided_parsing():
     assert iref.header.box_size == 148
     assert iref.header.version == 0
     assert iref.header.flags == b"\x00\x00\x00"
-    assert iref.padding == b''
 
     # meta/iref/dimg
     box_header = Parser.parse_header(bstr)
@@ -180,7 +171,6 @@ def test_photo_heic_guided_parsing():
                                 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
                                 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
                                 39, 40, 41, 42, 43, 44, 45, 46, 47, 48]
-    assert dimg.padding == b''
 
     # meta/iref/thmb
     box_header = Parser.parse_header(bstr)
@@ -191,7 +181,6 @@ def test_photo_heic_guided_parsing():
     assert thmb.from_item_id == 50
     assert thmb.reference_count == 1
     assert thmb.to_item_ids == [49]
-    assert thmb.padding == b''
 
     # meta/iref/cdsc
     box_header = Parser.parse_header(bstr)
@@ -202,7 +191,6 @@ def test_photo_heic_guided_parsing():
     assert cdsc.from_item_id == 51
     assert cdsc.reference_count == 1
     assert cdsc.to_item_ids == [49]
-    assert cdsc.padding == b''
 
     # meta/iprp
     box_header = Parser.parse_header(bstr)
@@ -210,7 +198,6 @@ def test_photo_heic_guided_parsing():
     assert iprp.header.start_pos == 1353
     assert iprp.header.type == b"iprp"
     assert iprp.header.box_size == 1778
-    assert iprp.padding == b''
 
     # meta/iprp/ipco
     box_header = Parser.parse_header(bstr)
@@ -218,7 +205,6 @@ def test_photo_heic_guided_parsing():
     assert ipco.header.start_pos == 1361
     assert ipco.header.type == b"ipco"
     assert ipco.header.box_size == 1452
-    assert ipco.padding == b''
 
     # meta/iprp/ipco/colr
     box_header = Parser.parse_header(bstr)
@@ -226,7 +212,6 @@ def test_photo_heic_guided_parsing():
     assert colr.header.start_pos == 1369
     assert colr.header.type == b"colr"
     assert colr.header.box_size == 560
-    assert colr.padding == b''
 
     # meta/iprp/ipco/hvcC
     box_header = Parser.parse_header(bstr)
@@ -234,7 +219,6 @@ def test_photo_heic_guided_parsing():
     assert hvcC.header.start_pos == 1929
     assert hvcC.header.type == b"hvcC"
     assert hvcC.header.box_size == 112
-    assert hvcC.padding == b''
 
     # meta/iprp/ipco/ispe
     box_header = Parser.parse_header(bstr)
@@ -242,7 +226,6 @@ def test_photo_heic_guided_parsing():
     assert ispe.header.start_pos == 2041
     assert ispe.header.type == b"ispe"
     assert ispe.header.box_size == 20
-    assert ispe.padding == b''
 
     # meta/iprp/ipco/ispe
     box_header = Parser.parse_header(bstr)
@@ -250,7 +233,6 @@ def test_photo_heic_guided_parsing():
     assert ispe.header.start_pos == 2061
     assert ispe.header.type == b"ispe"
     assert ispe.header.box_size == 20
-    assert ispe.padding == b''
 
     # meta/iprp/ipco/irot
     box_header = Parser.parse_header(bstr)
@@ -258,7 +240,6 @@ def test_photo_heic_guided_parsing():
     assert irot.header.start_pos == 2081
     assert irot.header.type == b"irot"
     assert irot.header.box_size == 9
-    assert irot.padding == b''
 
     # meta/iprp/ipco/pixi
     box_header = Parser.parse_header(bstr)
@@ -266,7 +247,6 @@ def test_photo_heic_guided_parsing():
     assert pixi.header.start_pos == 2090
     assert pixi.header.type == b"pixi"
     assert pixi.header.box_size == 16
-    assert pixi.padding == b''
 
     # meta/iprp/ipco/colr
     box_header = Parser.parse_header(bstr)
@@ -274,7 +254,6 @@ def test_photo_heic_guided_parsing():
     assert colr.header.start_pos == 2106
     assert colr.header.type == b"colr"
     assert colr.header.box_size == 560
-    assert colr.padding == b''
 
     # meta/iprp/ipco/hvcC
     box_header = Parser.parse_header(bstr)
@@ -282,7 +261,6 @@ def test_photo_heic_guided_parsing():
     assert hvcC.header.start_pos == 2666
     assert hvcC.header.type == b"hvcC"
     assert hvcC.header.box_size == 111
-    assert hvcC.padding == b''
 
     # meta/iprp/ipco/ispe
     box_header = Parser.parse_header(bstr)
@@ -290,7 +268,6 @@ def test_photo_heic_guided_parsing():
     assert ispe.header.start_pos == 2777
     assert ispe.header.type == b"ispe"
     assert ispe.header.box_size == 20
-    assert ispe.padding == b''
 
     # meta/iprp/ipco/pixi
     box_header = Parser.parse_header(bstr)
@@ -298,7 +275,6 @@ def test_photo_heic_guided_parsing():
     assert pixi.header.start_pos == 2797
     assert pixi.header.type == b"pixi"
     assert pixi.header.box_size == 16
-    assert pixi.padding == b''
 
     # meta/iprp/ipma
     box_header = Parser.parse_header(bstr)
@@ -310,11 +286,9 @@ def test_photo_heic_guided_parsing():
     assert ipma.header.flags == b"\x00\x00\x00"
     assert ipma.entry_count == 50
     assert len(ipma.entries) == 0
-    assert ipma.padding == b''
 
     ipma.load(bstr)
     assert len(ipma.entries) == 50
-    assert ipma.padding == b''
 
     entry = ipma.entries[0]
     assert entry.item_id == 1
@@ -390,7 +364,6 @@ def test_photo_heic_guided_parsing():
     assert idat.data[1] == int.from_bytes(b"\x00", "big")
     assert idat.data[6] == int.from_bytes(b"\x0b", "big")
     assert idat.data[7] == int.from_bytes(b"\xd0", "big")
-    assert idat.padding == b''
 
     # meta/iloc
     box_header = Parser.parse_header(bstr)
@@ -400,7 +373,6 @@ def test_photo_heic_guided_parsing():
     assert iloc.header.box_size == 832
     assert iloc.header.version == 1
     assert iloc.header.flags == b"\x00\x00\x00"
-    assert iloc.padding == b''
 
     assert iloc.offset_size == 4
     assert iloc.length_size == 4
@@ -408,11 +380,9 @@ def test_photo_heic_guided_parsing():
     assert iloc.index_size == 0
     assert iloc.item_count == 51
     assert len(iloc.items) == 0
-    assert iloc.padding == b''
 
     iloc.load(bstr)
     assert len(iloc.items) == 51
-    assert iloc.padding == b''
 
     item = iloc.items[0]
     assert item.item_id == 1
@@ -476,7 +446,6 @@ def test_photo_heic_guided_parsing():
     assert mdat.data[7] == int.from_bytes(b"\x88", "big")
     assert mdat.data[1350031] == int.from_bytes(b"\xfd", "big")
     assert mdat.data[1350032] == int.from_bytes(b"\x80", "big")
-    assert mdat.padding == b''
 
 
 def test_photo_heic_parsing():
@@ -496,7 +465,6 @@ def test_photo_heic_parsing():
             assert ftyp.minor_version == 0
             assert ftyp.compatible_brands == [1835623985,  # b"mif1"
                                               1751476579]  # b"heic"
-            assert ftyp.padding == b''
 
         elif i == 1:
             # meta
@@ -508,7 +476,6 @@ def test_photo_heic_parsing():
             assert meta.header.version == 0
             assert meta.header.flags == b"\x00\x00\x00"
             assert len(meta.boxes) == 8
-            assert meta.padding == b''
 
         elif i == 2:
             # mdat
@@ -517,7 +484,6 @@ def test_photo_heic_parsing():
             assert mdat.header.start_pos == 3979
             assert mdat.header.type == b"mdat"
             assert mdat.header.box_size == 1350049
-            assert mdat.padding == b''
 
         assert i < 3
 
@@ -532,7 +498,6 @@ def test_photo_heic_parsing():
     assert hdlr.pre_defined == 0
     assert hdlr.handler_type == b"pict"
     assert hdlr.name == b'\0'
-    assert hdlr.padding == b'\0'
 
     # meta/dinf
     dinf = meta.boxes[1]
@@ -541,7 +506,6 @@ def test_photo_heic_parsing():
     assert dinf.header.type == b"dinf"
     assert dinf.header.box_size == 36
     assert len(dinf.boxes) == 1
-    assert dinf.padding == b''
 
     # meta/dinf/dref
     dref = dinf.boxes[0]
@@ -553,7 +517,6 @@ def test_photo_heic_parsing():
     assert dref.header.flags == b"\x00\x00\x00"
     assert dref.entry_count == 1
     assert len(dref.boxes) == 1
-    assert dref.padding == b''
 
     # meta/dinf/dref/url_
     url = dref.boxes[0]
@@ -562,7 +525,6 @@ def test_photo_heic_parsing():
     assert url.header.type == b"url "
     assert url.header.box_size == 12
     assert url.location is None
-    assert url.padding == b''
 
     # meta/pitm
     pitm = meta.boxes[2]
@@ -570,7 +532,6 @@ def test_photo_heic_parsing():
     assert pitm.header.start_pos == 106
     assert pitm.header.type == b"pitm"
     assert pitm.header.box_size == 14
-    assert pitm.padding == b''
 
     # meta/iinf
     iinf = meta.boxes[3]
@@ -580,7 +541,6 @@ def test_photo_heic_parsing():
     assert iinf.header.box_size == 1085
     assert iinf.entry_count == 51
     assert len(iinf.boxes) == 51
-    assert iinf.padding == b''
 
     for i, infe in enumerate(iinf.boxes):
         # meta/iinf/infe
@@ -601,7 +561,6 @@ def test_photo_heic_parsing():
             assert infe.content_encoding is None
             assert infe.item_uri_type is None
             assert infe.extension_type is None
-            assert infe.padding == b''
         elif infe.item_id == 50:
             assert infe.header.start_pos == 134 + 49 * 21
             assert infe.header.type == b"infe"
@@ -617,7 +576,6 @@ def test_photo_heic_parsing():
             assert infe.content_encoding is None
             assert infe.item_uri_type is None
             assert infe.extension_type is None
-            assert infe.padding == b''
         elif infe.item_id == 51:
             assert infe.header.start_pos == 134 + 50 * 21
             assert infe.header.type == b"infe"
@@ -633,7 +591,6 @@ def test_photo_heic_parsing():
             assert infe.content_encoding is None
             assert infe.item_uri_type is None
             assert infe.extension_type is None
-            assert infe.padding == b''
         else:
             assert infe.header.start_pos == 134 + i * 21
             assert infe.header.type == b"infe"
@@ -649,7 +606,6 @@ def test_photo_heic_parsing():
             assert infe.content_encoding is None
             assert infe.item_uri_type is None
             assert infe.extension_type is None
-            assert infe.padding == b''
 
     # meta/iref
     iref = meta.boxes[4]
@@ -660,7 +616,6 @@ def test_photo_heic_parsing():
     assert iref.header.version == 0
     assert iref.header.flags == b"\x00\x00\x00"
     assert len(iref.boxes) == 3
-    assert iref.padding == b''
 
     # meta/iref/dimg
     dimg = iref.boxes[0]
@@ -673,7 +628,6 @@ def test_photo_heic_parsing():
                                 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
                                 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
                                 39, 40, 41, 42, 43, 44, 45, 46, 47, 48]
-    assert dimg.padding == b''
 
     # meta/iref/thmb
     thmb = iref.boxes[1]
@@ -683,7 +637,6 @@ def test_photo_heic_parsing():
     assert thmb.from_item_id == 50
     assert thmb.reference_count == 1
     assert thmb.to_item_ids == [49]
-    assert thmb.padding == b''
 
     # meta/iref/cdsc
     cdsc = iref.boxes[2]
@@ -693,7 +646,6 @@ def test_photo_heic_parsing():
     assert cdsc.from_item_id == 51
     assert cdsc.reference_count == 1
     assert cdsc.to_item_ids == [49]
-    assert cdsc.padding == b''
 
     # meta/iprp
     iprp = meta.boxes[5]
@@ -702,7 +654,6 @@ def test_photo_heic_parsing():
     assert iprp.header.type == b"iprp"
     assert iprp.header.box_size == 1778
     assert len(iprp.boxes) == 2
-    assert iprp.padding == b''
 
     # meta/iprp/ipco
     ipco = iprp.boxes[0]
@@ -711,77 +662,66 @@ def test_photo_heic_parsing():
     assert ipco.header.type == b"ipco"
     assert ipco.header.box_size == 1452
     assert len(ipco.boxes) == 10
-    assert ipco.padding == b''
 
     # meta/iprp/ipco/colr
     colr = ipco.boxes[0]
     assert colr.header.start_pos == 1369
     assert colr.header.type == b"colr"
     assert colr.header.box_size == 560
-    assert colr.padding == b''
 
     # meta/iprp/ipco/hvcC
     hvcC = ipco.boxes[1]
     assert hvcC.header.start_pos == 1929
     assert hvcC.header.type == b"hvcC"
     assert hvcC.header.box_size == 112
-    assert hvcC.padding == b''
 
     # meta/iprp/ipco/ispe
     ispe = ipco.boxes[2]
     assert ispe.header.start_pos == 2041
     assert ispe.header.type == b"ispe"
     assert ispe.header.box_size == 20
-    assert ispe.padding == b''
 
     # meta/iprp/ipco/ispe
     ispe = ipco.boxes[3]
     assert ispe.header.start_pos == 2061
     assert ispe.header.type == b"ispe"
     assert ispe.header.box_size == 20
-    assert ispe.padding == b''
 
     # meta/iprp/ipco/irot
     irot = ipco.boxes[4]
     assert irot.header.start_pos == 2081
     assert irot.header.type == b"irot"
     assert irot.header.box_size == 9
-    assert irot.padding == b''
 
     # meta/iprp/ipco/pixi
     pixi = ipco.boxes[5]
     assert pixi.header.start_pos == 2090
     assert pixi.header.type == b"pixi"
     assert pixi.header.box_size == 16
-    assert pixi.padding == b''
 
     # meta/iprp/ipco/colr
     colr = ipco.boxes[6]
     assert colr.header.start_pos == 2106
     assert colr.header.type == b"colr"
     assert colr.header.box_size == 560
-    assert colr.padding == b''
 
     # meta/iprp/ipco/hvcC
     hvcC = ipco.boxes[7]
     assert hvcC.header.start_pos == 2666
     assert hvcC.header.type == b"hvcC"
     assert hvcC.header.box_size == 111
-    assert hvcC.padding == b''
 
     # meta/iprp/ipco/ispe
     ispe = ipco.boxes[8]
     assert ispe.header.start_pos == 2777
     assert ispe.header.type == b"ispe"
     assert ispe.header.box_size == 20
-    assert ispe.padding == b''
 
     # meta/iprp/ipco/pixi
     pixi = ipco.boxes[9]
     assert pixi.header.start_pos == 2797
     assert pixi.header.type == b"pixi"
     assert pixi.header.box_size == 16
-    assert pixi.padding == b''
 
     # meta/iprp/ipma
     ipma = iprp.boxes[1]
@@ -793,11 +733,9 @@ def test_photo_heic_parsing():
     assert ipma.header.flags == b"\x00\x00\x00"
     assert ipma.entry_count == 50
     assert len(ipma.entries) == 0
-    assert ipma.padding == b''
 
     ipma.load(bstr)
     assert len(ipma.entries) == 50
-    assert ipma.padding == b''
 
     entry = ipma.entries[0]
     assert entry.item_id == 1
@@ -867,7 +805,6 @@ def test_photo_heic_parsing():
     assert idat.header.start_pos == 3131
     assert idat.header.type == b"idat"
     assert idat.header.box_size == 16
-    assert idat.padding == b''
 
     # meta/iloc
     iloc = meta.boxes[7]
@@ -884,11 +821,9 @@ def test_photo_heic_parsing():
     assert iloc.index_size == 0
     assert iloc.item_count == 51
     assert len(iloc.items) == 0
-    assert iloc.padding == b''
 
     iloc.load(bstr)
     assert len(iloc.items) == 51
-    assert iloc.padding == b''
 
     item = iloc.items[0]
     assert item.item_id == 1
@@ -939,9 +874,24 @@ def test_photo_heic_parsing():
     assert extent.extent_length == 2208
 
 
+def _assert_boxes_len_and_type(boxes, others):
+    assert len(boxes) == len(others)
+
+    for (box, other) in zip(boxes, others):
+        assert type(box) is type(other)
+        if isinstance(box, bx_def.ContainerBox):
+            _assert_boxes_len_and_type(box.boxes, other.boxes)
+
+
 def test_photo_heic_bytes():
     bstr = ConstBitStream(filename="tests/data/photo.heic")
+    
+    boxes_headers = [box for box in Parser.parse(bstr, headers_only=True)]
+
+    bstr.bytepos = 0
     boxes = [box for box in Parser.parse(bstr)]
+
+    _assert_boxes_len_and_type(boxes_headers, boxes)
 
     assert b''.join([bytes(box) for box in boxes]) != bstr.bytes
 
@@ -949,3 +899,4 @@ def test_photo_heic_bytes():
         box.load(bstr)
 
     assert b''.join([bytes(box) for box in boxes]) == bstr.bytes
+

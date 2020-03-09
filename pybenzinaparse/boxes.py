@@ -2,7 +2,7 @@ from abc import ABCMeta, abstractmethod
 
 from pybenzinaparse import Parser
 
-from pybenzinaparse.headers import FullBoxHeader
+from pybenzinaparse.headers import BoxHeader, FullBoxHeader
 from pybenzinaparse.fields_lists import *
 from pybenzinaparse.sub_fields_lists import EditListSubFieldsList, \
     TimeToSampleSubFieldsList, CompositionOffsetSubFieldsList, \
@@ -26,9 +26,12 @@ class MixinMinimalRepr(object):
                                                     content=self.__dict__.keys())
 
 
-class AbstractBox(metaclass=ABCMeta):
+class AbstractBox(FieldsList, metaclass=ABCMeta):
+    _header_cls = BoxHeader
+
     def __init__(self, header):
         self._header = header
+        self._fields_bits_len = None
         self._remaining_bytes = 0
         self._padding = None
 
@@ -44,6 +47,11 @@ class AbstractBox(metaclass=ABCMeta):
         self._header = value
 
     @property
+    def fields_bits_len(self):
+        return self.bits_len(self._header) if self._fields_bits_len is None \
+                                           else self._fields_bits_len
+
+    @property
     def padding(self):
         return b'\0' * self._remaining_bytes if self._padding is None else \
             self._padding
@@ -52,20 +60,32 @@ class AbstractBox(metaclass=ABCMeta):
     def padding(self, value):
         self._padding = value
 
-    @abstractmethod
     def load(self, bstr):
-        raise NotImplemented()
-
-    def parse(self, bstr):
-        self.parse_impl(bstr)
+        bstr.bitpos = (self._header.start_pos + self._header.header_size) * 8 + self.fields_bits_len
+        self.load_impl(bstr)
         self._remaining_bytes = self._header.start_pos + self._header.box_size - \
             bstr.bytepos
         if self._remaining_bytes != 0:
             self._padding = bstr.read(self._remaining_bytes * 8).bytes
+    
+    @abstractmethod
+    def load_impl(self, bstr):
+        raise NotImplemented()
+
+    def parse(self, bstr):
+        self.parse_impl(bstr)
+        self._fields_bits_len = bstr.bitpos - (self._header.start_pos + self._header.header_size) * 8
+        bstr.bytepos = self._header.start_pos + self._header.box_size
 
     @abstractmethod
     def parse_impl(self, bstr):
         raise NotImplemented()
+
+    def skip_fields(self, bstr):
+        fields_bits_len = self.fields_bits_len
+        if fields_bits_len:
+            bstr.bitpos = (self._header.start_pos + self._header.header_size) * 8 + fields_bits_len
+        return fields_bits_len
 
     def refresh_box_size(self):
         # TODO: this could be optimized if needed
@@ -80,19 +100,26 @@ class AbstractBox(metaclass=ABCMeta):
         raise NotImplemented()
 
     @classmethod
+    def get_header_cls(cls):
+        return cls._header_cls
+
+    @classmethod
     def parse_box(cls, bstr, header):
         box = cls(header)
         box.parse(bstr)
         return box
 
 
+# this is a bug and will not work with containerbox heritage
 class AbstractFullBox(AbstractBox, metaclass=ABCMeta):
-    @classmethod
-    def parse_box(cls, bstr, header):
-        full_box_header = FullBoxHeader()
-        full_box_header.extend_header(bstr, header)
-        del header
-        return super().parse_box(bstr, full_box_header)
+    _header_cls = FullBoxHeader
+
+    # @classmethod
+    # def parse_box(cls, bstr, header):
+    #     full_box_header = FullBoxHeader()
+    #     full_box_header.extend_header(bstr, header)
+    #     del header
+    #     return super().parse_box(bstr, full_box_header)
 
 
 class ContainerBox(AbstractBox, MixinDictRepr):
@@ -119,31 +146,34 @@ class ContainerBox(AbstractBox, MixinDictRepr):
     def pop(self):
         return self._boxes.pop()
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         for box in self._boxes:
             box.load(bstr)
 
     def parse(self, bstr):
         self.parse_impl(bstr)
+        self._fields_bits_len = (self._boxes_start_pos - self._header.start_pos - self._header.header_size) * 8
 
     def parse_impl(self, bstr):
         self._boxes_start_pos = bstr.bytepos
 
-    def parse_boxes(self, bstr, recursive=True):
+    def parse_boxes(self, bstr, headers_only=False, recursive=True):
         bstr.bytepos = self._boxes_start_pos
-        self.parse_boxes_impl(bstr, recursive)
-        # TODO: Validate in the specs if this check is needed
-        self._remaining_bytes = self._header.start_pos + self._header.box_size - \
-            bstr.bytepos
-        if self._remaining_bytes != 0:
-            self._padding = bstr.read(self._remaining_bytes * 8).bytes
+        self.parse_boxes_impl(bstr, headers_only, recursive)
 
-    def parse_boxes_impl(self, bstr, recursive=True):
+    def parse_boxes_impl(self, bstr, headers_only=False, recursive=True):
         self._boxes = []
         end_pos = self._header.start_pos + self._header.box_size
-        box_iterator = Parser.parse(bstr, recursive=recursive)
+        box_iterator = Parser.parse(bstr, headers_only=headers_only, recursive=recursive)
         while bstr.bytepos < end_pos:
             self._boxes.append(next(box_iterator))
+
+    def skip_fields(self, bstr):
+        bits_len = self.bits_len(self._header)
+        if bits_len:
+            bstr.bitpos += bits_len
+        self._boxes_start_pos = bstr.bytepos
+        return bits_len
 
     def refresh_box_size(self):
         self.refresh_boxes_size()
@@ -160,13 +190,12 @@ class ContainerBox(AbstractBox, MixinDictRepr):
             box.refresh_box_size()
 
     def _get_content_bytes(self):
-        return b''.join([bytes(box) for box in self._boxes])
+        return b''.join([bytes(box) for box in self._boxes])  
 
-    @classmethod
-    def parse_box(cls, bstr, header):
-        box = cls(header)
-        box.parse(bstr)
-        return box
+    @staticmethod
+    def bits_len(header):
+        del header
+        return 0
 
 
 class UnknownBox(AbstractBox, MixinDictRepr):
@@ -185,12 +214,12 @@ class UnknownBox(AbstractBox, MixinDictRepr):
     def payload(self, value):
         self._payload = value
 
-    def load(self, bstr):
-        bstr.bytepos = self._header.start_pos + self._header.header_size
+    def load_impl(self, bstr):
         self._payload = bstr.read(self._header.content_size * 8).bytes
 
     def parse_impl(self, bstr):
-        bstr.bytepos = self._header.start_pos + self._header.box_size
+        # bstr.bytepos = self._header.start_pos + self._header.box_size
+        pass
 
     def _get_content_bytes(self):
         return self._payload
@@ -201,15 +230,16 @@ class DataBox(AbstractBox, DataBoxFieldsList, MixinDictRepr):
         super().__init__(header)
         DataBoxFieldsList.__init__(self)
 
-    def load(self, bstr):
-        bstr.bytepos = self._header.start_pos + self._header.header_size
+    def load_impl(self, bstr):
+        # bstr.bytepos = self._header.start_pos + self._header.header_size
         self.parse_fields(bstr, self._header)
 
     def parse_impl(self, bstr):
-        bstr.bytepos = self._header.start_pos + self._header.box_size
+        # bstr.bytepos = self._header.start_pos + self._header.box_size
+        pass
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 # Root boxes
@@ -220,14 +250,14 @@ class FileTypeBox(AbstractBox, FileTypeBoxFieldsList, MixinDictRepr):
         super().__init__(header)
         FileTypeBoxFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 class MediaDataBox(DataBox):
@@ -240,15 +270,8 @@ class MovieBox(ContainerBox, MixinDictRepr):
     type = b"moov"
 
 
-class MetaBox(ContainerBox, MixinDictRepr):
+class MetaBox(AbstractFullBox, ContainerBox, MixinDictRepr):
     type = b"meta"
-
-    @classmethod
-    def parse_box(cls, bstr, header):
-        full_box_header = FullBoxHeader()
-        full_box_header.extend_header(bstr, header)
-        del header
-        return super().parse_box(bstr, full_box_header)
 
 
 # moov boxes
@@ -261,14 +284,14 @@ class MovieHeaderBox(AbstractFullBox, MovieHeaderBoxFieldsList, MixinDictRepr):
         super().__init__(header)
         MovieHeaderBoxFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 class TrackBox(ContainerBox, MixinDictRepr):
@@ -276,10 +299,10 @@ class TrackBox(ContainerBox, MixinDictRepr):
 
 
 # meta boxes
-class ItemReferenceBox(ContainerBox, MixinDictRepr):
+class ItemReferenceBox(AbstractFullBox, ContainerBox, MixinDictRepr):
     type = b"iref"
 
-    def parse_boxes_impl(self, bstr, recursive=True):
+    def parse_boxes_impl(self, bstr, headers_only=False, recursive=True):
         self._boxes = []
         end_pos = self._header.start_pos + self._header.box_size
 
@@ -292,15 +315,8 @@ class ItemReferenceBox(ContainerBox, MixinDictRepr):
         while bstr.bytepos < end_pos:
             header = Parser.parse_header(bstr)
             self._boxes.append(Parser.parse_box(bstr, header,
-                                                item_reference_box_cls,
-                                                recursive))
-
-    @classmethod
-    def parse_box(cls, bstr, header):
-        full_box_header = FullBoxHeader()
-        full_box_header.extend_header(bstr, header)
-        del header
-        return super().parse_box(bstr, full_box_header)
+                                                headers_only, recursive,
+                                                item_reference_box_cls))
 
 
 class ItemPropertiesBox(ContainerBox, MixinDictRepr):
@@ -318,17 +334,11 @@ class ItemLocationBox(AbstractFullBox, ItemLocationSubFieldsList, MixinDictRepr)
         super().__init__(header)
         ItemLocationSubFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         self.load_sub_fields(bstr, self._header)
-
-        self._remaining_bytes = self._header.start_pos + self._header.box_size - \
-                                bstr.bytepos
-        if self._remaining_bytes != 0:
-            self._padding = bstr.read(self._remaining_bytes * 8).bytes
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
-        bstr.bytepos = self._header.start_pos + self._header.box_size
 
     def _get_content_bytes(self):
         return ItemLocationSubFieldsList.__bytes__(self)
@@ -362,14 +372,14 @@ class TrackHeaderBox(AbstractFullBox, TrackHeaderBoxFieldsList, MixinDictRepr):
     def is_audio(self):
         return self._volume.value == 1
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 class MediaBox(ContainerBox, MixinDictRepr):
@@ -389,14 +399,14 @@ class SingleItemTypeReferenceBox(AbstractBox, SingleItemTypeReferenceBoxFieldsLi
         super().__init__(header)
         SingleItemTypeReferenceBoxFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 class SingleItemTypeReferenceBoxLarge(AbstractBox, SingleItemTypeReferenceBoxLargeFieldsList,
@@ -407,14 +417,14 @@ class SingleItemTypeReferenceBoxLarge(AbstractBox, SingleItemTypeReferenceBoxLar
         super().__init__(header)
         SingleItemTypeReferenceBoxLargeFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 # iprp boxes
@@ -430,17 +440,11 @@ class ItemPropertyAssociationBox(AbstractFullBox, ItemPropertyAssociationSubFiel
         super().__init__(header)
         ItemPropertyAssociationSubFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         self.load_sub_fields(bstr, self._header)
-
-        self._remaining_bytes = self._header.start_pos + self._header.box_size - \
-                                bstr.bytepos
-        if self._remaining_bytes != 0:
-            self._padding = bstr.read(self._remaining_bytes * 8).bytes
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
-        bstr.bytepos = self._header.start_pos + self._header.box_size
 
     def _get_content_bytes(self):
         return ItemPropertyAssociationSubFieldsList.__bytes__(self)
@@ -454,14 +458,14 @@ class MediaHeaderBox(AbstractFullBox, MediaHeaderBoxFieldsList, MixinDictRepr):
         super().__init__(header)
         MediaHeaderBoxFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 class HandlerReferenceBox(AbstractFullBox, HandlerReferenceBoxFieldsList, MixinDictRepr):
@@ -471,14 +475,14 @@ class HandlerReferenceBox(AbstractFullBox, HandlerReferenceBoxFieldsList, MixinD
         super().__init__(header)
         HandlerReferenceBoxFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 class MediaInformationBox(ContainerBox, MixinDictRepr):
@@ -497,17 +501,11 @@ class EditListBox(AbstractFullBox, EditListSubFieldsList, MixinDictRepr):
         super().__init__(header)
         EditListSubFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         self.load_sub_fields(bstr, self._header)
-
-        self._remaining_bytes = self._header.start_pos + self._header.box_size - \
-                                bstr.bytepos
-        if self._remaining_bytes != 0:
-            self._padding = bstr.read(self._remaining_bytes * 8).bytes
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
-        bstr.bytepos = self._header.start_pos + self._header.box_size
 
     def _get_content_bytes(self):
         return EditListSubFieldsList.__bytes__(self)
@@ -521,20 +519,20 @@ class VideoMediaHeaderBox(AbstractFullBox, VideoMediaHeaderBoxFieldsList, MixinD
         super().__init__(header)
         VideoMediaHeaderBoxFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 class NullMediaHeaderBox(AbstractFullBox, MixinDictRepr):
     type = b"nmhd"
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
@@ -547,7 +545,7 @@ class NullMediaHeaderBox(AbstractFullBox, MixinDictRepr):
 class SubtitleMediaHeaderBox(AbstractFullBox, MixinDictRepr):
     type = b"sthd"
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
@@ -562,7 +560,7 @@ class DataInformationBox(ContainerBox, MixinDictRepr):
 
 
 # stbl boxes
-class SampleDescriptionBox(ContainerBox, SampleDescriptionBoxFieldsList, MixinDictRepr):
+class SampleDescriptionBox(AbstractFullBox, ContainerBox, SampleDescriptionBoxFieldsList, MixinDictRepr):
     type = b"stsd"
 
     def __init__(self, header):
@@ -586,33 +584,30 @@ class SampleDescriptionBox(ContainerBox, SampleDescriptionBoxFieldsList, MixinDi
         self.parse_fields(bstr, self._header)
         self._boxes_start_pos = bstr.bytepos
 
-    def parse_boxes_impl(self, bstr, recursive=True):
+    def parse_boxes_impl(self, bstr, headers_only=False, recursive=True):
         self._boxes = []
-        box_iterator = Parser.parse(bstr, recursive=recursive)
+        box_iterator = Parser.parse(bstr, headers_only=headers_only, recursive=recursive)
         for i in range(self._entry_count.value):
             self._boxes.append(next(box_iterator))
+
+    def skip_fields(self, bstr):
+        self.parse(bstr)
+        return 0
 
     def refresh_box_size(self):
         self.refresh_boxes_size()
         boxes_size = 0
         for box in self._boxes:
             boxes_size += box.header.box_size
-        fields_size = len(AbstractFieldsList.__bytes__(self))
+        fields_size = len(FieldsList.__bytes__(self))
         padding_size = len(self.padding)
         box_size = len(bytes(self._header)) + fields_size + boxes_size + padding_size
         if self._header.box_size != box_size:
             self._header.update_box_size(fields_size + boxes_size + padding_size)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self) + \
+        return FieldsList.__bytes__(self) + \
                b''.join([bytes(box) for box in self._boxes])
-
-    @classmethod
-    def parse_box(cls, bstr, header):
-        full_box_header = FullBoxHeader()
-        full_box_header.extend_header(bstr, header)
-        del header
-        return super().parse_box(bstr, full_box_header)
 
 
 class TimeToSampleBox(AbstractFullBox, TimeToSampleSubFieldsList,
@@ -623,17 +618,11 @@ class TimeToSampleBox(AbstractFullBox, TimeToSampleSubFieldsList,
         super().__init__(header)
         TimeToSampleSubFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         self.load_sub_fields(bstr, self._header)
-
-        self._remaining_bytes = self._header.start_pos + self._header.box_size - \
-                                bstr.bytepos
-        if self._remaining_bytes != 0:
-            self._padding = bstr.read(self._remaining_bytes * 8).bytes
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
-        bstr.bytepos = self._header.start_pos + self._header.box_size
 
     def _get_content_bytes(self):
         return TimeToSampleSubFieldsList.__bytes__(self)
@@ -647,17 +636,11 @@ class CompositionOffsetBox(AbstractFullBox, CompositionOffsetSubFieldsList,
         super().__init__(header)
         CompositionOffsetSubFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         self.load_sub_fields(bstr, self._header)
-
-        self._remaining_bytes = self._header.start_pos + self._header.box_size - \
-                                bstr.bytepos
-        if self._remaining_bytes != 0:
-            self._padding = bstr.read(self._remaining_bytes * 8).bytes
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
-        bstr.bytepos = self._header.start_pos + self._header.box_size
 
     def _get_content_bytes(self):
         return CompositionOffsetSubFieldsList.__bytes__(self)
@@ -670,17 +653,11 @@ class SampleSizeBox(AbstractFullBox, SampleSizeSubFieldsList, MixinDictRepr):
         super().__init__(header)
         SampleSizeSubFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         self.load_sub_fields(bstr, self._header)
-
-        self._remaining_bytes = self._header.start_pos + self._header.box_size - \
-                                bstr.bytepos
-        if self._remaining_bytes != 0:
-            self._padding = bstr.read(self._remaining_bytes * 8).bytes
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
-        bstr.bytepos = self._header.start_pos + self._header.box_size
 
     def _get_content_bytes(self):
         return SampleSizeSubFieldsList.__bytes__(self)
@@ -694,17 +671,11 @@ class SampleToChunkBox(AbstractFullBox, SampleToChunkSubFieldsList,
         super().__init__(header)
         SampleToChunkSubFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         self.load_sub_fields(bstr, self._header)
-
-        self._remaining_bytes = self._header.start_pos + self._header.box_size - \
-                                bstr.bytepos
-        if self._remaining_bytes != 0:
-            self._padding = bstr.read(self._remaining_bytes * 8).bytes
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
-        bstr.bytepos = self._header.start_pos + self._header.box_size
 
     def _get_content_bytes(self):
         return SampleToChunkSubFieldsList.__bytes__(self)
@@ -717,17 +688,11 @@ class ChunkOffsetBox(AbstractFullBox, ChunkOffsetSubFieldsList, MixinDictRepr):
         super().__init__(header)
         ChunkOffsetSubFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         self.load_sub_fields(bstr, self._header)
-
-        self._remaining_bytes = self._header.start_pos + self._header.box_size - \
-                                bstr.bytepos
-        if self._remaining_bytes != 0:
-            self._padding = bstr.read(self._remaining_bytes * 8).bytes
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
-        bstr.bytepos = self._header.start_pos + self._header.box_size
 
     def _get_content_bytes(self):
         return ChunkOffsetSubFieldsList.__bytes__(self)
@@ -740,24 +705,18 @@ class ChunkOffset64Box(AbstractFullBox, ChunkOffset64SubFieldsList, MixinDictRep
         super().__init__(header)
         ChunkOffset64SubFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         self.load_sub_fields(bstr, self._header)
-
-        self._remaining_bytes = self._header.start_pos + self._header.box_size - \
-                                bstr.bytepos
-        if self._remaining_bytes != 0:
-            self._padding = bstr.read(self._remaining_bytes * 8).bytes
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
-        bstr.bytepos = self._header.start_pos + self._header.box_size
 
     def _get_content_bytes(self):
         return ChunkOffset64SubFieldsList.__bytes__(self)
 
 
 # dinf boxes
-class DataReferenceBox(ContainerBox, DataReferenceBoxFieldsList, MixinDictRepr):
+class DataReferenceBox(AbstractFullBox, ContainerBox, DataReferenceBoxFieldsList, MixinDictRepr):
     type = b"dref"
 
     def __init__(self, header):
@@ -781,33 +740,30 @@ class DataReferenceBox(ContainerBox, DataReferenceBoxFieldsList, MixinDictRepr):
         self.parse_fields(bstr, self._header)
         self._boxes_start_pos = bstr.bytepos
 
-    def parse_boxes_impl(self, bstr, recursive=True):
+    def parse_boxes_impl(self, bstr, headers_only=False, recursive=True):
         self._boxes = []
-        box_iterator = Parser.parse(bstr, recursive=recursive)
+        box_iterator = Parser.parse(bstr, headers_only=headers_only, recursive=recursive)
         for i in range(self._entry_count.value):
             self._boxes.append(next(box_iterator))
+
+    def skip_fields(self, bstr):
+        self.parse(bstr)
+        return 0
 
     def refresh_box_size(self):
         self.refresh_boxes_size()
         boxes_size = 0
         for box in self._boxes:
             boxes_size += box.header.box_size
-        fields_size = len(AbstractFieldsList.__bytes__(self))
+        fields_size = len(FieldsList.__bytes__(self))
         padding_size = len(self.padding)
         box_size = len(bytes(self._header)) + fields_size + boxes_size + padding_size
         if self._header.box_size != box_size:
             self._header.update_box_size(fields_size + boxes_size + padding_size)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self) + \
+        return FieldsList.__bytes__(self) + \
                b''.join([bytes(box) for box in self._boxes])
-
-    @classmethod
-    def parse_box(cls, bstr, header):
-        full_box_header = FullBoxHeader()
-        full_box_header.extend_header(bstr, header)
-        del header
-        return super().parse_box(bstr, full_box_header)
 
 
 class PrimaryItemBox(AbstractFullBox, PrimaryItemBoxFieldsList, MixinDictRepr):
@@ -817,17 +773,17 @@ class PrimaryItemBox(AbstractFullBox, PrimaryItemBoxFieldsList, MixinDictRepr):
         super().__init__(header)
         PrimaryItemBoxFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
-class ItemInformationBox(ContainerBox, ItemInformationBoxFieldsList, MixinDictRepr):
+class ItemInformationBox(AbstractFullBox, ContainerBox, ItemInformationBoxFieldsList, MixinDictRepr):
     type = b"iinf"
 
     def __init__(self, header):
@@ -851,33 +807,30 @@ class ItemInformationBox(ContainerBox, ItemInformationBoxFieldsList, MixinDictRe
         self.parse_fields(bstr, self._header)
         self._boxes_start_pos = bstr.bytepos
 
-    def parse_boxes_impl(self, bstr, recursive=True):
+    def parse_boxes_impl(self, bstr, headers_only=False, recursive=True):
         self._boxes = []
-        box_iterator = Parser.parse(bstr, recursive=recursive)
+        box_iterator = Parser.parse(bstr, headers_only=headers_only, recursive=recursive)
         for i in range(self._entry_count.value):
             self._boxes.append(next(box_iterator))
+
+    def skip_fields(self, bstr):
+        self.parse(bstr)
+        return 0
 
     def refresh_box_size(self):
         self.refresh_boxes_size()
         boxes_size = 0
         for box in self._boxes:
             boxes_size += box.header.box_size
-        fields_size = len(AbstractFieldsList.__bytes__(self))
+        fields_size = len(FieldsList.__bytes__(self))
         padding_size = len(self.padding)
         box_size = len(bytes(self._header)) + fields_size + boxes_size + padding_size
         if self._header.box_size != box_size:
             self._header.update_box_size(fields_size + boxes_size + padding_size)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self) + \
+        return FieldsList.__bytes__(self) + \
                b''.join([bytes(box) for box in self._boxes])
-
-    @classmethod
-    def parse_box(cls, bstr, header):
-        full_box_header = FullBoxHeader()
-        full_box_header.extend_header(bstr, header)
-        del header
-        return super().parse_box(bstr, full_box_header)
 
 
 # stsd boxes
@@ -897,14 +850,14 @@ class SampleEntryBox(ContainerBox, SampleEntryBoxFieldsList, MixinDictRepr):
         boxes_size = 0
         for box in self._boxes:
             boxes_size += box.header.box_size
-        fields_size = len(AbstractFieldsList.__bytes__(self))
+        fields_size = len(FieldsList.__bytes__(self))
         padding_size = len(self.padding)
         box_size = len(bytes(self._header)) + fields_size + boxes_size + padding_size
         if self._header.box_size != box_size:
             self._header.update_box_size(fields_size + boxes_size + padding_size)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self) + \
+        return FieldsList.__bytes__(self) + \
                b''.join([bytes(box) for box in self._boxes])
 
 
@@ -920,7 +873,7 @@ class VisualSampleEntryBox(SampleEntryBox, VisualSampleEntryBoxFieldsList):
         self._boxes_start_pos = bstr.bytepos
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self) + \
+        return FieldsList.__bytes__(self) + \
                b''.join([bytes(box) for box in self._boxes])
 
 
@@ -952,7 +905,7 @@ class SimpleTextSampleEntryBox(SampleEntryBox, SimpleTextSampleEntryBoxFieldsLis
         self._boxes_start_pos = bstr.bytepos
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self) + \
+        return FieldsList.__bytes__(self) + \
                b''.join([bytes(box) for box in self._boxes])
 
 
@@ -972,7 +925,7 @@ class TextMetaDataSampleEntryBox(MetaDataSampleEntry, TextMetaDataSampleEntryBox
         self._boxes_start_pos = bstr.bytepos
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self) + \
+        return FieldsList.__bytes__(self) + \
                b''.join([bytes(box) for box in self._boxes])
 
 
@@ -992,7 +945,7 @@ class TextSubtitleSampleEntryBox(MetaDataSampleEntry, TextSubtitleSampleEntryBox
         self._boxes_start_pos = bstr.bytepos
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self) + \
+        return FieldsList.__bytes__(self) + \
                b''.join([bytes(box) for box in self._boxes])
 
 
@@ -1004,14 +957,14 @@ class DataEntryUrlBox(AbstractFullBox, DataEntryUrlBoxFieldsList, MixinDictRepr)
         super().__init__(header)
         DataEntryUrlBoxFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 class DataEntryUrnBox(AbstractFullBox, DataEntryUrnBoxFieldsList, MixinDictRepr):
@@ -1021,18 +974,18 @@ class DataEntryUrnBox(AbstractFullBox, DataEntryUrnBoxFieldsList, MixinDictRepr)
         super().__init__(header)
         DataEntryUrnBoxFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 # iinf boxes
-class ItemInfoEntryBox(ContainerBox, ItemInfoEntryBoxFieldsList, MixinDictRepr):
+class ItemInfoEntryBox(AbstractFullBox, ContainerBox, ItemInfoEntryBoxFieldsList, MixinDictRepr):
     type = b"infe"
 
     def __init__(self, header):
@@ -1043,33 +996,26 @@ class ItemInfoEntryBox(ContainerBox, ItemInfoEntryBoxFieldsList, MixinDictRepr):
         self.parse_fields(bstr, self._header)
         self._boxes_start_pos = bstr.bytepos
 
-    def parse_boxes_impl(self, bstr, recursive=True):
+    def parse_boxes_impl(self, bstr, headers_only=False, recursive=True):
         self._boxes = []
         if self._extension_type.value:
             bstr.bytepos = self._boxes_start_pos
-            self._boxes.append(next(Parser.parse(bstr, recursive=recursive)))
+            self._boxes.append(next(Parser.parse(bstr, headers_only=headers_only, recursive=recursive)))
 
     def refresh_box_size(self):
         self.refresh_boxes_size()
         boxes_size = 0
         for box in self._boxes:
             boxes_size += box.header.box_size
-        fields_size = len(AbstractFieldsList.__bytes__(self))
+        fields_size = len(FieldsList.__bytes__(self))
         padding_size = len(self.padding)
         box_size = len(bytes(self._header)) + fields_size + boxes_size + padding_size
         if self._header.box_size != box_size:
             self._header.update_box_size(fields_size + boxes_size + padding_size)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self) + \
+        return FieldsList.__bytes__(self) + \
                b''.join([bytes(box) for box in self._boxes])
-
-    @classmethod
-    def parse_box(cls, bstr, header):
-        full_box_header = FullBoxHeader()
-        full_box_header.extend_header(bstr, header)
-        del header
-        return super().parse_box(bstr, full_box_header)
 
 
 # avc1, hev1, hvc1 boxes
@@ -1080,14 +1026,14 @@ class PixelAspectRatioBox(AbstractBox, PixelAspectRatioBoxFieldsList):
         super().__init__(header)
         PixelAspectRatioBoxFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 class CleanApertureBox(AbstractBox, CleanApertureBoxFieldsList):
@@ -1097,14 +1043,14 @@ class CleanApertureBox(AbstractBox, CleanApertureBoxFieldsList):
         super().__init__(header)
         CleanApertureBoxFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         pass
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
 
     def _get_content_bytes(self):
-        return AbstractFieldsList.__bytes__(self)
+        return FieldsList.__bytes__(self)
 
 
 # hev1, hvc1 boxes
@@ -1116,17 +1062,11 @@ class HEVCConfigurationBox(AbstractBox, HEVCConfigurationSubFieldsList,
         super().__init__(header)
         HEVCConfigurationSubFieldsList.__init__(self)
 
-    def load(self, bstr):
+    def load_impl(self, bstr):
         self.load_sub_fields(bstr, self._header)
-
-        self._remaining_bytes = self._header.start_pos + self._header.box_size - \
-                                bstr.bytepos
-        if self._remaining_bytes != 0:
-            self._padding = bstr.read(self._remaining_bytes * 8).bytes
 
     def parse_impl(self, bstr):
         self.parse_fields(bstr, self._header)
-        bstr.bytepos = self._header.start_pos + self._header.box_size
 
     def _get_content_bytes(self):
         return HEVCConfigurationSubFieldsList.__bytes__(self)
