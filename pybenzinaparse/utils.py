@@ -1,6 +1,9 @@
 from ctypes import c_uint32
 from datetime import datetime, timedelta
 
+from bitstring import ConstBitStream
+
+from pybenzinaparse import Parser
 from pybenzinaparse import boxes as bx_def
 from pybenzinaparse.headers import BoxHeader, FullBoxHeader
 
@@ -417,6 +420,34 @@ def make_vide_trak(creation_time, modification_time, name,
     stsd.append(avc1)
 
     return trak
+
+
+def find_headers_at(file, types, offset=None, until_pos=None):
+    if offset is not None:
+        file.seek(offset)
+        pos = offset
+    else:
+        pos = file.tell()
+
+    if until_pos is not None:
+        until_pos += pos
+
+    headers = (Parser.parse_header(ConstBitStream(chunk))
+               for chunk in iter(lambda: file.read(32), b''))
+
+    for header in headers:
+        if header.type not in types:
+            pos += header.box_size
+            file.seek(pos)
+            continue
+
+        yield pos, header
+        pos += header.box_size
+
+        if pos < until_pos:
+            file.seek(pos)
+        else:
+            break
 
 
 def find_boxes(boxes, box_types):
