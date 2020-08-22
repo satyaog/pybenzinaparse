@@ -430,7 +430,7 @@ def find_boxes(boxes, box_types):
 
 def find_traks(boxes, trak_names):
     for box in find_boxes(boxes, b"trak"):
-        if get_trak_name(box) in trak_names:
+        if get_name(box) in trak_names:
             yield box
 
 
@@ -454,12 +454,12 @@ def get_trak_sample_bytes(bstr, boxes, trak_name, index):
     return sample_bytes
 
 
-def get_trak_name(trak):
+def get_name(trak):
     # TRAK.MDIA.HDLR
     return trak.boxes[-1].boxes[1].name
 
 
-def get_trak_shape(trak):
+def get_shape(trak):
     # TRAK.TKHD
     tkhd = trak.boxes[0]
     return tkhd.width, tkhd.height
@@ -542,9 +542,9 @@ def find_headers_at(file, types, offset=None, length=None):
             break
 
 
-def get_trak_name_at(file, pos=None):
+def get_name_at(file, trak_pos=None):
     # TRAK.MDIA.HDLR
-    pos, _, _, header_size = next(find_headers_at(file, {b"trak"}, pos))
+    pos, _, _, header_size = next(find_headers_at(file, {b"trak"}, trak_pos))
     pos, _, _, header_size = next(find_headers_at(file, {b"mdia"}, pos + header_size))
     pos, box_size, _, header_size = next(find_headers_at(file, {b"hdlr"}, pos + header_size))
     name_offset = (header_size +
@@ -557,9 +557,9 @@ def get_trak_name_at(file, pos=None):
     return file.read(box_size - name_offset)
 
 
-def get_trak_shape_at(file, pos=None):
+def get_shape_at(file, trak_pos=None):
     # TRAK.TKHD
-    pos, _, _, header_size = next(find_headers_at(file, {b"trak"}, pos))
+    pos, _, _, header_size = next(find_headers_at(file, {b"trak"}, trak_pos))
     pos, box_size, _, header_size = next(find_headers_at(file, {b"tkhd"}, pos + header_size))
     file.seek(pos)
     box_bytes = file.read(box_size)
@@ -599,9 +599,9 @@ def get_trak_shape_at(file, pos=None):
     return width, height
 
 
-def get_sample_table_at(file, pos=None):
+def get_sample_table_at(file, trak_pos=None):
     # TRAK.MDIA.MINF.STBL
-    pos, _, _, header_size = next(find_headers_at(file, {b"trak"}, pos))
+    pos, _, _, header_size = next(find_headers_at(file, {b"trak"}, trak_pos))
     pos, _, _, header_size = next(find_headers_at(file, {b"mdia"}, pos + header_size))
     pos, _, _, header_size = next(find_headers_at(file, {b"minf"}, pos + header_size))
     stbl_pos, box_size, _, _ = next(find_headers_at(file, {b"stbl"}, pos + header_size))

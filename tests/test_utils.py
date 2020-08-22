@@ -611,13 +611,13 @@ def test_find_traks():
 
     boxes[3].header.type = b"0001"
 
-    assert utils.get_trak_name(next(utils.find_traks(boxes, b"trak1\0"))) == b"trak1\0"
-    assert utils.get_trak_name(next(utils.find_traks(boxes, b"trak2\0"))) == b"trak2\0"
-    assert utils.get_trak_name(next(utils.find_traks(boxes, b"trak3\0"))) == b"trak3\0"
+    assert utils.get_name(next(utils.find_traks(boxes, b"trak1\0"))) == b"trak1\0"
+    assert utils.get_name(next(utils.find_traks(boxes, b"trak2\0"))) == b"trak2\0"
+    assert utils.get_name(next(utils.find_traks(boxes, b"trak3\0"))) == b"trak3\0"
 
-    assert [utils.get_trak_name(trak)
+    assert [utils.get_name(trak)
             for trak in utils.find_traks(boxes, b"trak2\0")] == [b"trak2\0", b"trak2\0"]
-    assert [utils.get_trak_name(trak)
+    assert [utils.get_name(trak)
             for trak in utils.find_traks(boxes, [b"trak1\0", b"trak3\0"])] == [b"trak1\0", b"trak3\0"]
 
     assert next(utils.find_boxes(boxes, b"0004"), None) is None
@@ -633,16 +633,16 @@ def test_get_trak_sample_location():
     assert utils.get_trak_sample_location(boxes, b"trak1\0", 1) == (35801, 67890)
 
 
-def test_get_trak_name():
+def test_get_name():
     trak = utils.make_meta_trak(0, 0, b"trak1\0", [], 0)
 
-    assert utils.get_trak_name(trak) == b"trak1\0"
+    assert utils.get_name(trak) == b"trak1\0"
 
 
-def test_get_trak_shape():
+def test_get_shape():
     trak = utils.make_meta_trak(0, 0, b"trak1\0", [], 0)
 
-    assert utils.get_trak_shape(trak) == (-1, -1)
+    assert utils.get_shape(trak) == (-1, -1)
 
 
 def test_get_sample_table():
@@ -713,7 +713,7 @@ def test_get_name_at():
     trak.refresh_box_size()
 
     buffer = io.BytesIO(bytes(trak))
-    assert utils.get_trak_name_at(buffer, 0) == utils.get_trak_name(trak)
+    assert utils.get_name_at(buffer, 0) == utils.get_name(trak)
 
 
 def test_get_shape_at():
@@ -734,7 +734,7 @@ def test_get_shape_at():
     trak.refresh_box_size()
 
     buffer = io.BytesIO(bytes(trak))
-    assert utils.get_trak_shape_at(buffer, 0) == utils.get_trak_shape(trak)
+    assert utils.get_shape_at(buffer, 0) == utils.get_shape(trak)
 
 
 def test_get_sample_table_at():
