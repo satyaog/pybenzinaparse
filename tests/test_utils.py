@@ -1,7 +1,7 @@
 from datetime import datetime
 import io
 
-from bitstring import pack
+from bitstring import ConstBitStream, pack
 
 from pybenzinaparse import boxes as bx_def, headers as hd_def
 import pybenzinaparse.utils as utils
@@ -713,7 +713,7 @@ def test_get_name_at():
     trak.refresh_box_size()
 
     buffer = io.BytesIO(bytes(trak))
-    assert utils.get_trak_name_at(buffer, trak.header.header_size) == utils.get_trak_name(trak)
+    assert utils.get_trak_name_at(buffer, 0) == utils.get_trak_name(trak)
 
 
 def test_get_shape_at():
@@ -734,4 +734,28 @@ def test_get_shape_at():
     trak.refresh_box_size()
 
     buffer = io.BytesIO(bytes(trak))
-    assert utils.get_trak_shape_at(buffer, trak.header.header_size) == utils.get_trak_shape(trak)
+    assert utils.get_trak_shape_at(buffer, 0) == utils.get_trak_shape(trak)
+
+
+def test_get_sample_table_at():
+    creation_time = utils.to_mp4_time(datetime(2019, 9, 15, 0, 0, 0))
+    modification_time = utils.to_mp4_time(datetime(2019, 9, 16, 0, 0, 0))
+
+    samples_sizes = [198297, 127477, 192476]
+    samples_offset = 10
+    trak = utils.make_trak(creation_time, modification_time,
+                           samples_sizes, samples_offset)
+
+    # MOOV.TRAK.TKHD
+    tkhd = trak.boxes[0]
+    tkhd.track_id = 1
+    tkhd.width = [512, 0]
+    tkhd.height = [512, 0]
+
+    trak.refresh_box_size()
+
+    buffer = io.BytesIO(bytes(trak))
+    stbl_pos, stbl = utils.get_sample_table_at(buffer, 0)
+    buffer.seek(stbl_pos)
+    stbl.load(ConstBitStream(buffer.read(stbl.header.box_size)))
+    assert bytes(stbl) == bytes(utils.get_sample_table(trak))

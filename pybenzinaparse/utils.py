@@ -507,7 +507,9 @@ def find_headers_at(file, types, offset=None, length=None):
         pos = file.tell()
 
     if length is not None:
-        length += pos
+        until_pos = pos + length
+    else:
+        until_pos = None
 
     headers = (header_bytes for header_bytes in iter(lambda: file.read(32), b''))
 
@@ -534,37 +536,35 @@ def find_headers_at(file, types, offset=None, length=None):
         yield pos, box_size, box_type, header_size
         pos += box_size
 
-        if length is None or pos < length:
+        if until_pos is None or pos < until_pos:
             file.seek(pos)
         else:
             break
 
 
 def get_trak_name_at(file, pos=None):
-    if pos is None:
-        pos = file.tell()
-
-    pos, _size, _, _header_size = next(find_headers_at(file, {b"mdia"}, pos))
-    pos, _size, _, _header_size = next(find_headers_at(file, {b"hdlr"}, pos + _header_size))
-    name_offset = (_header_size +
+    # TRAK.MDIA.HDLR
+    pos, _, _, header_size = next(find_headers_at(file, {b"trak"}, pos))
+    pos, _, _, header_size = next(find_headers_at(file, {b"mdia"}, pos + header_size))
+    pos, box_size, _, header_size = next(find_headers_at(file, {b"hdlr"}, pos + header_size))
+    name_offset = (header_size +
                    1 +  # version: 1 bytes
                    3 +  # flags: 24 bits
                    4 +  # pre_defined: uint32
                    4 +  # handler_type: 4 bytes
                    12)  # reserved0: 3 * 32 bits
     file.seek(pos + name_offset)
-    return file.read(_size - name_offset)
+    return file.read(box_size - name_offset)
 
 
 def get_trak_shape_at(file, pos=None):
-    if pos is None:
-        pos = file.tell()
-
-    pos, box_size, _, box_header_size = next(find_headers_at(file, {b"tkhd"}, pos))
+    # TRAK.TKHD
+    pos, _, _, header_size = next(find_headers_at(file, {b"trak"}, pos))
+    pos, box_size, _, header_size = next(find_headers_at(file, {b"tkhd"}, pos + header_size))
     file.seek(pos)
     box_bytes = file.read(box_size)
-    box_version = box_bytes[box_header_size + 0]  # version (fullbox): uint8
-    shape_offset = (box_header_size +
+    box_version = box_bytes[header_size + 0]  # version (fullbox): uint8
+    shape_offset = (header_size +
                     1 +     # version (fullbox): uint8
                     3 +     # flags (fullbox): 24 bits
                     8 +     # creation_time: uint64
@@ -597,3 +597,14 @@ def get_trak_shape_at(file, pos=None):
     width = int.from_bytes(box_bytes[width_offset:width_offset + 2], "big")
     height = int.from_bytes(box_bytes[height_offset:height_offset + 2], "big")
     return width, height
+
+
+def get_sample_table_at(file, pos=None):
+    # TRAK.MDIA.MINF.STBL
+    pos, _, _, header_size = next(find_headers_at(file, {b"trak"}, pos))
+    pos, _, _, header_size = next(find_headers_at(file, {b"mdia"}, pos + header_size))
+    pos, _, _, header_size = next(find_headers_at(file, {b"minf"}, pos + header_size))
+    stbl_pos, box_size, _, _ = next(find_headers_at(file, {b"stbl"}, pos + header_size))
+    file.seek(stbl_pos)
+    stbl = next(Parser.parse(bytes_input=file.read(box_size)))
+    return stbl_pos, stbl
