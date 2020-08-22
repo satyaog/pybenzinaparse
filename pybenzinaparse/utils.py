@@ -422,34 +422,6 @@ def make_vide_trak(creation_time, modification_time, name,
     return trak
 
 
-def find_headers_at(file, types, offset=None, until_pos=None):
-    if offset is not None:
-        file.seek(offset)
-        pos = offset
-    else:
-        pos = file.tell()
-
-    if until_pos is not None:
-        until_pos += pos
-
-    headers = (Parser.parse_header(ConstBitStream(chunk))
-               for chunk in iter(lambda: file.read(32), b''))
-
-    for header in headers:
-        if header.type not in types:
-            pos += header.box_size
-            file.seek(pos)
-            continue
-
-        yield pos, header
-        pos += header.box_size
-
-        if pos < until_pos:
-            file.seek(pos)
-        else:
-            break
-
-
 def find_boxes(boxes, box_types):
     for box in boxes:
         if box.header.type in box_types:
@@ -458,7 +430,7 @@ def find_boxes(boxes, box_types):
 
 def find_traks(boxes, trak_names):
     for box in find_boxes(boxes, b"trak"):
-        if get_name(box) in trak_names:
+        if get_trak_name(box) in trak_names:
             yield box
 
 
@@ -482,12 +454,12 @@ def get_trak_sample_bytes(bstr, boxes, trak_name, index):
     return sample_bytes
 
 
-def get_name(trak):
+def get_trak_name(trak):
     # TRAK.MDIA.HDLR
     return trak.boxes[-1].boxes[1].name
 
 
-def get_shape(trak):
+def get_trak_shape(trak):
     # TRAK.TKHD
     tkhd = trak.boxes[0]
     return tkhd.width, tkhd.height
@@ -525,3 +497,103 @@ def get_sample_bytes(bstr, trak, index):
     offset, size = location
     bstr.bytepos = offset
     return bstr.read("bytes:{}".format(size))
+
+
+def find_headers_at(file, types, offset=None, length=None):
+    if offset is not None:
+        file.seek(offset)
+        pos = offset
+    else:
+        pos = file.tell()
+
+    if length is not None:
+        length += pos
+
+    headers = (header_bytes for header_bytes in iter(lambda: file.read(32), b''))
+
+    for header_bytes in headers:
+        # box_size: uint32
+        box_size = int.from_bytes(header_bytes[0:4], "big")
+        # box_type: 4 bytes
+        box_type = header_bytes[4:8]
+        header_size = 8
+        if box_size == 1:
+            # ext_size: uint64
+            box_size = int.from_bytes(header_bytes[8:16], "big")
+            header_size += 8
+        if box_type == b'uuid':
+            # user_type: 16 bytes
+            box_type = header_bytes[header_size:header_size+16]
+            header_size += 16
+
+        if box_type not in types:
+            pos += box_size
+            file.seek(pos)
+            continue
+
+        yield pos, box_size, box_type, header_size
+        pos += box_size
+
+        if length is None or pos < length:
+            file.seek(pos)
+        else:
+            break
+
+
+def get_trak_name_at(file, pos=None):
+    if pos is None:
+        pos = file.tell()
+
+    pos, _size, _, _header_size = next(find_headers_at(file, {b"mdia"}, pos))
+    pos, _size, _, _header_size = next(find_headers_at(file, {b"hdlr"}, pos + _header_size))
+    name_offset = (_header_size +
+                   1 +  # version: 1 bytes
+                   3 +  # flags: 24 bits
+                   4 +  # pre_defined: uint32
+                   4 +  # handler_type: 4 bytes
+                   12)  # reserved0: 3 * 32 bits
+    file.seek(pos + name_offset)
+    return file.read(_size - name_offset)
+
+
+def get_trak_shape_at(file, pos=None):
+    if pos is None:
+        pos = file.tell()
+
+    pos, box_size, _, box_header_size = next(find_headers_at(file, {b"tkhd"}, pos))
+    file.seek(pos)
+    box_bytes = file.read(box_size)
+    box_version = box_bytes[box_header_size + 0]  # version (fullbox): uint8
+    shape_offset = (box_header_size +
+                    1 +     # version (fullbox): uint8
+                    3 +     # flags (fullbox): 24 bits
+                    8 +     # creation_time: uint64
+                    8 +     # modification_time: uint64
+                    4 +     # track_id: uint32
+                    4 +     # reserved0: 32 bits
+                    8 +     # duration: uint64
+
+                    8 +     # reserved1: 2 * 32 bits
+
+                    2 +     # layer: uint16
+                    2 +     # alternate_group: uint16
+                    2 +     # volume: 2 * uint8
+
+                    2 +     # reserved2: 16 bits
+
+                    36)     # matrix: 9 * uint32
+
+    if box_version != 1:
+        shape_offset += ((4 - 8) +  # creation_time: uint32
+                         (4 - 8) +  # modification_time: uint32
+                         (4 - 4) +  # track_id: uint32
+                         (4 - 4) +  # reserved0: 32 bi32
+                         (4 - 8))   # duration: uint32
+
+    width_offset = shape_offset
+    height_offset = shape_offset + 4    # width: 2 * uint16
+    # Read only integer parts of width and height
+    # (width and height are uint16.uint16 floats)
+    width = int.from_bytes(box_bytes[width_offset:width_offset + 2], "big")
+    height = int.from_bytes(box_bytes[height_offset:height_offset + 2], "big")
+    return width, height
