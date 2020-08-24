@@ -682,10 +682,9 @@ def test_find_headers_at():
 
     buffer = io.BytesIO(bytes(trak))
     for (pos, box_size, box_type, header_size), \
-        box in zip(utils.find_headers_at(buffer,
-                                         {b'tkhd', b'mdia'},
+        box in zip(utils.find_headers_at(buffer, {b'tkhd', b'mdia'},
                                          offset=trak.header.header_size),
-                   trak.boxes):
+                   utils.find_boxes(trak.boxes, {b'tkhd', b'mdia'})):
         assert pos < buffer.tell()
         assert box_size == box.header.box_size
         assert box_type == box.header.type
@@ -693,6 +692,86 @@ def test_find_headers_at():
             assert header_size + 4 == box.header.header_size
         else:
             assert header_size == box.header.header_size
+
+
+def test_find_sample_table_at():
+    creation_time = utils.to_mp4_time(datetime(2019, 9, 15, 0, 0, 0))
+    modification_time = utils.to_mp4_time(datetime(2019, 9, 16, 0, 0, 0))
+
+    samples_sizes = [198297, 127477, 192476]
+    samples_offset = 10
+    trak = utils.make_trak(creation_time, modification_time,
+                           samples_sizes, samples_offset)
+
+    # MOOV.TRAK.TKHD
+    tkhd = trak.boxes[0]
+    tkhd.track_id = 1
+    tkhd.width = [512, 0]
+    tkhd.height = [512, 0]
+
+    trak.refresh_box_size()
+
+    buffer = io.BytesIO(bytes(trak))
+    _, box_size, box_type, header_size = \
+        utils.find_sample_table_at(buffer, 0)
+    stbl = utils.get_sample_table(trak)
+    assert box_size == stbl.header.box_size
+    assert box_type == stbl.header.type
+    assert header_size == stbl.header.header_size
+
+
+def test_find_chunk_offset_at():
+    creation_time = utils.to_mp4_time(datetime(2019, 9, 15, 0, 0, 0))
+    modification_time = utils.to_mp4_time(datetime(2019, 9, 16, 0, 0, 0))
+
+    samples_sizes = [198297, 127477, 192476]
+    samples_offset = 10
+    trak = utils.make_trak(creation_time, modification_time,
+                           samples_sizes, samples_offset)
+
+    # MOOV.TRAK.TKHD
+    tkhd = trak.boxes[0]
+    tkhd.track_id = 1
+    tkhd.width = [512, 0]
+    tkhd.height = [512, 0]
+
+    trak.refresh_box_size()
+
+    buffer = io.BytesIO(bytes(trak))
+    stbl_pos, _, _, _ = utils.find_sample_table_at(buffer, 0)
+    _, box_size, box_type, header_size = utils.find_chunk_offset_at(buffer, stbl_pos)
+    stbl = utils.get_sample_table(trak)
+    co_box = next(utils.find_boxes(stbl.boxes, {b"stco", b"co64"}))
+    assert box_size == co_box.header.box_size
+    assert box_type == co_box.header.type
+    assert header_size == co_box.header.header_size
+
+
+def test_find_sample_size_at():
+    creation_time = utils.to_mp4_time(datetime(2019, 9, 15, 0, 0, 0))
+    modification_time = utils.to_mp4_time(datetime(2019, 9, 16, 0, 0, 0))
+
+    samples_sizes = [198297, 127477, 192476]
+    samples_offset = 10
+    trak = utils.make_trak(creation_time, modification_time,
+                           samples_sizes, samples_offset)
+
+    # MOOV.TRAK.TKHD
+    tkhd = trak.boxes[0]
+    tkhd.track_id = 1
+    tkhd.width = [512, 0]
+    tkhd.height = [512, 0]
+
+    trak.refresh_box_size()
+
+    buffer = io.BytesIO(bytes(trak))
+    stbl_pos, _, _, _ = utils.find_sample_table_at(buffer, 0)
+    _, box_size, box_type, header_size = utils.find_sample_size_at(buffer, stbl_pos)
+    stbl = utils.get_sample_table(trak)
+    stsz = next(utils.find_boxes(stbl.boxes, {b"stsz"}))
+    assert box_size == stsz.header.box_size
+    assert box_type == stsz.header.type
+    assert header_size == stsz.header.header_size
 
 
 def test_get_name_at():
@@ -735,27 +814,3 @@ def test_get_shape_at():
 
     buffer = io.BytesIO(bytes(trak))
     assert utils.get_shape_at(buffer, 0) == utils.get_shape(trak)
-
-
-def test_get_sample_table_at():
-    creation_time = utils.to_mp4_time(datetime(2019, 9, 15, 0, 0, 0))
-    modification_time = utils.to_mp4_time(datetime(2019, 9, 16, 0, 0, 0))
-
-    samples_sizes = [198297, 127477, 192476]
-    samples_offset = 10
-    trak = utils.make_trak(creation_time, modification_time,
-                           samples_sizes, samples_offset)
-
-    # MOOV.TRAK.TKHD
-    tkhd = trak.boxes[0]
-    tkhd.track_id = 1
-    tkhd.width = [512, 0]
-    tkhd.height = [512, 0]
-
-    trak.refresh_box_size()
-
-    buffer = io.BytesIO(bytes(trak))
-    stbl_pos, stbl = utils.get_sample_table_at(buffer, 0)
-    buffer.seek(stbl_pos)
-    stbl.load(ConstBitStream(buffer.read(stbl.header.box_size)))
-    assert bytes(stbl) == bytes(utils.get_sample_table(trak))

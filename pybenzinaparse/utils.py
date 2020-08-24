@@ -542,14 +542,58 @@ def find_headers_at(file, types, offset=None, length=None):
             break
 
 
+def find_sample_table_at(file, trak_pos=None):
+    # TRAK.MDIA.MINF.STBL
+    pos, _, _, header_size = next(find_headers_at(file, {b"trak"}, trak_pos))
+    pos, _, _, header_size = next(find_headers_at(file, {b"mdia"}, pos + header_size))
+    pos, _, _, header_size = next(find_headers_at(file, {b"minf"}, pos + header_size))
+    return next(find_headers_at(file, {b"stbl"}, pos + header_size))
+
+
+def find_chunk_offset_at(file, stbl_pos=None):
+    # STBL.[STCO | CO64]
+    pos, _, _, header_size = next(find_headers_at(file, {b"stbl"}, stbl_pos))
+    pos, box_size, box_type, header_size = \
+        next(find_headers_at(file, {b"stco", b"co64"}, pos + header_size))
+    header_size += (1 +  # version (fullbox): 1 bytes
+                    3)   # flags (fullbox): 24 bits
+    return pos, box_size, box_type, header_size
+
+
+def find_sample_size_at(file, stbl_pos=None):
+    # STBL.STSZ
+    pos, _, _, header_size = next(find_headers_at(file, {b"stbl"}, stbl_pos))
+    pos, box_size, box_type, header_size = \
+        next(find_headers_at(file, {b"stsz"}, pos + header_size))
+    header_size += (1 +  # version (fullbox): 1 bytes
+                    3)   # flags (fullbox): 24 bits
+    return pos, box_size, box_type, header_size
+
+
+def find_video_configuration_at(file, stbl_pos=None):
+    # STBL.STSD.[AVC1 | HEC1 | HVC1].[AVCC | HVCC]
+    pos, _, _, header_size = next(find_headers_at(file, {b"stsd"}, stbl_pos))
+    header_size += (1 +  # version (fullbox): 1 bytes
+                    3)   # flags (fullbox): 24 bits
+    pos, _, _, header_size = next(find_headers_at(file,
+                                                  {b"avc1", b"hec1", b"hvc1"},
+                                                  pos + header_size),
+                                  (None, None, None, None))
+
+    if pos is None:
+        return None
+
+    return next(find_headers_at(file, {b"avcC", b"hvcC"}, pos + header_size))
+
+
 def get_name_at(file, trak_pos=None):
     # TRAK.MDIA.HDLR
     pos, _, _, header_size = next(find_headers_at(file, {b"trak"}, trak_pos))
     pos, _, _, header_size = next(find_headers_at(file, {b"mdia"}, pos + header_size))
     pos, box_size, _, header_size = next(find_headers_at(file, {b"hdlr"}, pos + header_size))
     name_offset = (header_size +
-                   1 +  # version: 1 bytes
-                   3 +  # flags: 24 bits
+                   1 +  # version (fullbox): 1 bytes
+                   3 +  # flag (fullbox)s: 24 bits
                    4 +  # pre_defined: uint32
                    4 +  # handler_type: 4 bytes
                    12)  # reserved0: 3 * 32 bits
@@ -597,14 +641,3 @@ def get_shape_at(file, trak_pos=None):
     width = int.from_bytes(box_bytes[width_offset:width_offset + 2], "big")
     height = int.from_bytes(box_bytes[height_offset:height_offset + 2], "big")
     return width, height
-
-
-def get_sample_table_at(file, trak_pos=None):
-    # TRAK.MDIA.MINF.STBL
-    pos, _, _, header_size = next(find_headers_at(file, {b"trak"}, trak_pos))
-    pos, _, _, header_size = next(find_headers_at(file, {b"mdia"}, pos + header_size))
-    pos, _, _, header_size = next(find_headers_at(file, {b"minf"}, pos + header_size))
-    stbl_pos, box_size, _, _ = next(find_headers_at(file, {b"stbl"}, pos + header_size))
-    file.seek(stbl_pos)
-    stbl = next(Parser.parse(bytes_input=file.read(box_size)))
-    return stbl_pos, stbl
