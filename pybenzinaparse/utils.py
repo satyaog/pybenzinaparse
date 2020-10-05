@@ -1,6 +1,9 @@
 from ctypes import c_uint32
 from datetime import datetime, timedelta
 
+from bitstring import ConstBitStream
+
+from pybenzinaparse import Parser
 from pybenzinaparse import boxes as bx_def
 from pybenzinaparse.headers import BoxHeader, FullBoxHeader
 
@@ -494,3 +497,46 @@ def get_sample_bytes(bstr, trak, index):
     offset, size = location
     bstr.bytepos = offset
     return bstr.read("bytes:{}".format(size))
+
+
+def find_headers_at(file, types, offset=None, length=None):
+    if offset is not None:
+        file.seek(offset)
+        pos = offset
+    else:
+        pos = file.tell()
+
+    if length is not None:
+        until_pos = pos + length
+    else:
+        until_pos = None
+
+    headers = (header_buf for header_buf in iter(lambda: file.read(32), b''))
+
+    for header_buf in headers:
+        # box_size: uint32
+        box_size = int.from_bytes(header_buf[0:4], "big")
+        # box_type: 4 bytes
+        box_type = header_buf[4:8]
+        header_size = 8
+        if box_size == 1:
+            # ext_size: uint64
+            box_size = int.from_bytes(header_buf[8:16], "big")
+            header_size += 8
+        if box_type == b'uuid':
+            # user_type: 16 bytes
+            box_type = header_buf[header_size:header_size+16]
+            header_size += 16
+
+        if box_type not in types:
+            pos += box_size
+            file.seek(pos)
+            continue
+
+        yield pos, box_size, box_type, header_size
+        pos += box_size
+
+        if until_pos is None or pos < until_pos:
+            file.seek(pos)
+        else:
+            break
