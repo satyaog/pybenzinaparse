@@ -9,7 +9,7 @@ except(IOError, ImportError):
 
 setup(
     name="pybenzinaparse",
-    version="0.2.1",
+    version="0.2.2",
     packages=find_packages(exclude=["test_*"]),
     url="https://github.com/satyaog/pybenzinaparse",
     license="The MIT License",
