@@ -660,3 +660,34 @@ def test_get_sample_location():
 
     assert utils.get_sample_location(trak, 0) == (23456, 12345)
     assert utils.get_sample_location(trak, 1) == (78901, 67890)
+
+
+def test_find_headers_at():
+    creation_time = utils.to_mp4_time(datetime(2019, 9, 15, 0, 0, 0))
+    modification_time = utils.to_mp4_time(datetime(2019, 9, 16, 0, 0, 0))
+
+    samples_sizes = [198297, 127477, 192476]
+    samples_offset = 10
+    trak = utils.make_trak(creation_time, modification_time,
+                           samples_sizes, samples_offset)
+
+    # MOOV.TRAK.TKHD
+    tkhd = trak.boxes[0]
+    tkhd.track_id = 1
+    tkhd.width = [512, 0]
+    tkhd.height = [512, 0]
+
+    trak.refresh_box_size()
+
+    buffer = io.BytesIO(bytes(trak))
+    for (pos, box_size, box_type, header_size), \
+        box in zip(utils.find_headers_at(buffer, {b'tkhd', b'mdia'},
+                                         offset=trak.header.header_size),
+                   utils.find_boxes(trak.boxes, {b'tkhd', b'mdia'})):
+        assert pos < buffer.tell()
+        assert box_size == box.header.box_size
+        assert box_type == box.header.type
+        if isinstance(box.header, hd_def.FullBoxHeader):
+            assert header_size + 4 == box.header.header_size
+        else:
+            assert header_size == box.header.header_size
